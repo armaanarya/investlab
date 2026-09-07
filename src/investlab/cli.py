@@ -553,6 +553,161 @@ def portfolio_init(
     console.print(f"[green]Created[/green] {path} with ${starting:,} cash.")
 
 
+@app.command()
+def fill(
+    symbol: str = typer.Option(..., "--symbol", "-s", help="Ticker that filled."),
+    action: str = typer.Option("buy", "--action", "-a", help="buy or sell"),
+    quantity: int = typer.Option(..., "--quantity", "-q", help="Shares actually filled."),
+    price: str = typer.Option(..., "--price", "-p", help="Fill price from the platform."),
+    commission: str = typer.Option("", help="Defaults to the profile's commission."),
+    when: str = typer.Option("", help="Session date, YYYY-MM-DD. Defaults to today ET."),
+    profile: str = typer.Option("deca", help="deca or wharton"),
+    asset_class: str = typer.Option(
+        "", help="stock, etf, mutual_fund or bond. Inferred from the universe when known."
+    ),
+) -> None:
+    """Record a trade that actually executed, so the tool's book matches reality.
+
+    Nothing else writes to the portfolio. Until you run this, `daily` still
+    believes you hold the old positions and the old cash, and will keep
+    proposing buys you have already made.
+
+    Use the numbers from the platform's confirmation, not the numbers the
+    order sheet predicted. DECA prices at the session close, so what you were
+    quoted when you clicked is not what you paid.
+    """
+    from investlab.contracts import Action as ActionEnum
+
+    cfg = cfg_mod.load()
+    cache = ParquetCache(cfg.data.cache_dir)
+    account = _load_account(profile, cache, cfg)
+    path = _portfolio_path(profile)
+    if not path.exists():
+        console.print(f"[red]No portfolio at {path}.[/red] Run 'investlab portfolio init' first.")
+        raise typer.Exit(EXIT_BAD_CONFIG)
+
+    sym = symbol.upper()
+    try:
+        act = ActionEnum(action.lower())
+    except ValueError as exc:
+        console.print(f"[red]Action must be buy or sell,[/red] got {action!r}")
+        raise typer.Exit(EXIT_BAD_CONFIG) from exc
+
+    if asset_class:
+        klass = AssetClass(asset_class.lower())
+    else:
+        try:
+            klass = default_universe().get(sym).asset_class
+        except Exception:  # noqa: BLE001 - unknown symbol is a user-fixable case
+            console.print(
+                f"[red]{sym} is not in the universe,[/red] so its asset class is unknown. "
+                "Pass --asset-class (stock, etf, mutual_fund or bond). This matters: "
+                "DECA counts ETFs as stocks and bond mutual funds as mutual funds, and "
+                "guessing would corrupt the diversification check."
+            )
+            raise typer.Exit(EXIT_BAD_CONFIG) from None
+
+    default_comm = (
+        cfg.deca.commission_per_trade if profile == "deca" else cfg.wharton.commission_per_trade
+    )
+    comm = Decimal(commission) if commission else default_comm
+    session = date.fromisoformat(when) if when else today_et()
+
+    if quantity <= 0:
+        console.print("[red]Quantity must be positive.[/red]")
+        raise typer.Exit(EXIT_BAD_CONFIG)
+
+    px = Decimal(price)
+    before_cash = account.cash
+    held = next((p for p in account.positions if p.symbol == sym), None)
+
+    if act is ActionEnum.BUY:
+        cost = px * Decimal(quantity) + comm
+        if cost > before_cash:
+            console.print(
+                f"[red]Rejected:[/red] {sym} costs ${cost:,.2f} including commission "
+                f"but only ${before_cash:,.2f} cash is recorded. If the platform "
+                "really filled this, your book is out of step — reconcile it first."
+            )
+            raise typer.Exit(EXIT_BAD_CONFIG)
+        after_cash = before_cash - cost
+    else:
+        owned = held.quantity if held else 0
+        if quantity > owned:
+            console.print(
+                f"[red]Rejected:[/red] selling {quantity:,} {sym} but the book shows "
+                f"{owned:,}. Shorting is disabled, so this is a bookkeeping "
+                "mismatch rather than a short sale."
+            )
+            raise typer.Exit(EXIT_BAD_CONFIG)
+        after_cash = before_cash + px * Decimal(quantity) - comm
+
+    raw = json.loads(path.read_text())
+    raw["cash"] = str(after_cash)
+    raw["as_of"] = session.isoformat()
+    by_symbol = {p["symbol"]: p for p in raw.get("positions", [])}
+    if act is ActionEnum.BUY:
+        entry = by_symbol.setdefault(sym, {"symbol": sym, "asset_class": klass.value, "lots": []})
+        entry["lots"].append(
+            {
+                "quantity": quantity,
+                "price": str(Decimal(price)),
+                "commission": str(comm),
+                "opened": session.isoformat(),
+            }
+        )
+    else:
+        remaining = quantity
+        lots = by_symbol.get(sym, {}).get("lots", [])
+        for lot in list(lots):  # FIFO, matching the ledger
+            if remaining <= 0:
+                break
+            take = min(remaining, lot["quantity"])
+            lot["quantity"] -= take
+            remaining -= take
+        by_symbol.get(sym, {})["lots"] = [x for x in lots if x["quantity"] > 0]
+        if sym in by_symbol and not by_symbol[sym]["lots"]:
+            del by_symbol[sym]
+    raw["positions"] = list(by_symbol.values())
+    path.write_text(json.dumps(raw, indent=2))
+
+    console.print(
+        f"[green]Recorded[/green] {act.value} {quantity:,} {sym} @ ${Decimal(price):,.2f} "
+        f"(+${comm} commission) on {session}."
+    )
+
+    # The bond-ETF trap. DECA's guidelines say "all ETFs (including bond ETFs)
+    # are classified as stocks", so buying AGG or BND to cover the bond leg
+    # covers the STOCK leg instead and leaves the bond requirement untouched.
+    # A student finding this out on Oct 23 has no time to fix it.
+    if profile == "deca" and act is ActionEnum.BUY and klass is AssetClass.ETF:
+        bonds_held = sum(
+            (p.net_cost for p in account.positions if p.asset_class is AssetClass.BOND),
+            Decimal("0"),
+        )
+        if bonds_held < cfg.deca.diversification_minimum:
+            console.print(
+                Panel(
+                    f"[bold]{sym} counted toward STOCKS, not bonds.[/bold]\n\n"
+                    "DECA classifies every ETF as a stock, bond ETFs included, so this "
+                    "purchase did nothing for your bond requirement. Your bond leg is "
+                    f"still ${bonds_held:,.2f} against a ${cfg.deca.diversification_minimum:,.0f} "
+                    f"minimum due {cfg.deca.diversification_deadline}.\n\n"
+                    "Only bonds SMG itself provides count, investment grade at BBB or "
+                    "better. Find them in the platform's bond list, not by buying a "
+                    "bond fund ticker.",
+                    title="This did not satisfy the bond leg",
+                    border_style="yellow",
+                )
+            )
+    console.print(f"Cash ${before_cash:,.2f} -> [bold]${after_cash:,.2f}[/bold]")
+    console.print(
+        "\n[bold]Now record why you did it:[/bold] "
+        f"[cyan]investlab journal add -s {sym} -a {act.value} "
+        f"-q {quantity} -p {price}[/cyan]"
+    )
+
+
 journal_app = typer.Typer(help="Your own decision log. Required by both competitions.")
 app.add_typer(journal_app, name="journal")
 

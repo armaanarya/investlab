@@ -52,10 +52,18 @@ uv run investlab --help
 ## Daily use
 
 ```bash
-uv run investlab data pull            # refresh the local price cache
-uv run investlab daily --profile deca # today's order sheet
-uv run investlab journal add          # record why you made each trade
+uv run investlab data pull                       # refresh the local price cache
+uv run investlab daily --profile deca            # today's order sheet
+uv run investlab fill -s AGG -a buy -q 102 -p 99.05   # what actually executed
+uv run investlab journal add -s AGG -a buy -q 102 -p 99.05  # why you did it
 ```
+
+**`fill` is not optional.** It is the only command that writes to your
+portfolio. Until you run it, `daily` still believes you hold the old positions
+with the old cash, and will keep proposing buys you have already made. Use the
+numbers from the platform's confirmation, not the ones the order sheet
+predicted — DECA prices at the session close, so what you were quoted when you
+clicked is not what you paid.
 
 Signals compute from the **previous completed close**, so run it in the
 morning. That matters because of a timing difference between the two games:
