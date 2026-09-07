@@ -16,13 +16,30 @@ from decimal import Decimal
 import pytest
 
 from investlab.competitions import deca
-from investlab.contracts import AccountState, AssetClass, Bar, BlockReason, Instrument, Lot, Position
+from investlab.contracts import (
+    AccountState,
+    Action,
+    AssetClass,
+    Bar,
+    BlockReason,
+    Fill,
+    Instrument,
+    Lot,
+    Position,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
 PROFILE = deca.DecaProfile()
+
+
+def check_named(checks, name):
+    for c in checks:
+        if c.name == name:
+            return c
+    raise AssertionError(f"no check named {name!r} in {[c.name for c in checks]}")
 
 
 def make_account(cash="100000", positions=(), marks=None, as_of=date(2026, 9, 8)):
@@ -291,3 +308,143 @@ def test_position_at_31_percent_blocks_add_but_is_not_force_sold():
 def test_position_at_29_percent_allows_add():
     acct = account_with_one_position_at(Decimal("29000"), cash=Decimal("71000"))
     assert PROFILE.can_add_to(acct, "AAA") == (True, "")
+
+
+# ---------------------------------------------------------------------------
+# Task 4: the diversification engine
+# ---------------------------------------------------------------------------
+
+
+def test_ten_thousand_dollar_outlay_with_five_dollar_fee_falls_short():
+    # 1999 shares x $5.00 = $9,995 net cost + $5.00 commission = $10,000.00 spent.
+    lot = Lot("FXAIX", 1999, Decimal("5.00"), Decimal("5.00"), date(2026, 9, 9))
+    assert lot.gross_cost == Decimal("10000.00")
+    assert lot.net_cost == Decimal("9995.00")
+    acct = make_account(
+        cash="0",
+        positions=(Position("FXAIX", AssetClass.MUTUAL_FUND, (lot,)),),
+        marks={"FXAIX": "5.00"},
+    )
+    check = check_named(PROFILE.check_rules(acct, date(2026, 10, 1)), "diversification_mutual_funds")
+    assert check.satisfied is False
+    assert "9,995.00" in check.detail
+    assert "10,005.00" in check.detail
+
+
+def test_ten_thousand_one_hundred_dollar_outlay_qualifies():
+    # 2019 shares x $5.00 = $10,095 net cost + $5.00 = $10,100.00 spent.
+    lot = Lot("FXAIX", 2019, Decimal("5.00"), Decimal("5.00"), date(2026, 9, 9))
+    assert lot.gross_cost == Decimal("10100.00")
+    acct = make_account(
+        cash="0",
+        positions=(Position("FXAIX", AssetClass.MUTUAL_FUND, (lot,)),),
+        marks={"FXAIX": "5.00"},
+    )
+    check = check_named(PROFILE.check_rules(acct, date(2026, 10, 1)), "diversification_mutual_funds")
+    assert check.satisfied is True
+
+
+def test_net_cost_of_exactly_ten_thousand_qualifies():
+    lot = Lot("FXAIX", 2000, Decimal("5.00"), Decimal("5.00"), date(2026, 9, 9))
+    assert lot.net_cost == Decimal("10000.00")
+    acct = make_account(
+        cash="0",
+        positions=(Position("FXAIX", AssetClass.MUTUAL_FUND, (lot,)),),
+        marks={"FXAIX": "5.00"},
+    )
+    check = check_named(PROFILE.check_rules(acct, date(2026, 10, 1)), "diversification_mutual_funds")
+    assert check.satisfied is True
+
+
+def test_market_value_falling_to_eight_thousand_requires_no_action():
+    # 200 shares x $50.50 = $10,100 net cost, later marked at $40.00 = $8,000.
+    lot = Lot("FXAIX", 200, Decimal("50.50"), Decimal("5.00"), date(2026, 9, 9))
+    acct = make_account(
+        cash="0",
+        positions=(Position("FXAIX", AssetClass.MUTUAL_FUND, (lot,)),),
+        marks={"FXAIX": "40.00"},
+    )
+    assert acct.marked_positions == Decimal("8000.00")
+    check = check_named(PROFILE.check_rules(acct, date(2026, 11, 2)), "diversification_mutual_funds")
+    assert check.satisfied is True
+    assert "no action" in check.detail.lower()
+
+
+def test_bond_etf_counts_as_a_stock_not_a_bond():
+    lot = Lot("BND", 200, Decimal("70.00"), Decimal("5.00"), date(2026, 9, 9))  # $14,000
+    acct = make_account(
+        cash="0", positions=(Position("BND", AssetClass.ETF, (lot,)),), marks={"BND": "70.00"}
+    )
+    checks = PROFILE.check_rules(acct, date(2026, 10, 1))
+    assert check_named(checks, "diversification_stocks").satisfied is True
+    assert check_named(checks, "diversification_bonds").satisfied is False
+
+
+def test_bond_mutual_fund_counts_as_a_mutual_fund_not_a_bond():
+    lot = Lot("VBTLX", 1500, Decimal("10.00"), Decimal("5.00"), date(2026, 9, 9))  # $15,000
+    acct = make_account(
+        cash="0",
+        positions=(Position("VBTLX", AssetClass.MUTUAL_FUND, (lot,)),),
+        marks={"VBTLX": "10.00"},
+    )
+    checks = PROFILE.check_rules(acct, date(2026, 10, 1))
+    assert check_named(checks, "diversification_mutual_funds").satisfied is True
+    assert check_named(checks, "diversification_bonds").satisfied is False
+
+
+def test_short_stock_position_does_not_count_toward_the_stock_bucket():
+    lot = Lot("AAA", -200, Decimal("100.00"), Decimal("5.00"), date(2026, 9, 9))
+    acct = make_account(
+        cash="0", positions=(Position("AAA", AssetClass.STOCK, (lot,)),), marks={"AAA": "100.00"}
+    )
+    assert PROFILE.class_net_cost(acct, deca.AssetBucket.STOCKS) == Decimal("0")
+
+
+def test_selling_out_of_bonds_on_a_friday_is_due_the_following_monday():
+    sale = deca.ClassifiedFill(
+        Fill("USTB", Action.SELL, 12, Decimal("1000.00"), Decimal("5.00"), Decimal("0.33"), date(2026, 11, 20)),
+        AssetClass.BOND,
+    )
+    acct = make_account(cash="12000", positions=(), marks={})
+    check = check_named(
+        PROFILE.check_rules(acct, date(2026, 11, 20), sell_history=(sale,)), "diversification_bonds"
+    )
+    assert check.satisfied is False
+    assert check.deadline == date(2026, 11, 23)  # Friday sale -> Monday
+    assert "one business day" in check.detail.lower()
+    assert "2026-11-23" in check.detail
+
+
+def test_selling_the_day_before_thanksgiving_is_due_the_friday():
+    sale = deca.ClassifiedFill(
+        Fill("USTB", Action.SELL, 12, Decimal("1000.00"), Decimal("5.00"), Decimal("0.33"), date(2026, 11, 25)),
+        AssetClass.BOND,
+    )
+    acct = make_account(cash="12000", positions=(), marks={})
+    check = check_named(
+        PROFILE.check_rules(acct, date(2026, 11, 25), sell_history=(sale,)), "diversification_bonds"
+    )
+    assert check.deadline == date(2026, 11, 27)  # skips Thanksgiving
+
+
+def test_an_early_sale_does_not_manufacture_a_deadline_before_october_23():
+    sale = deca.ClassifiedFill(
+        Fill("USTB", Action.SELL, 12, Decimal("1000.00"), Decimal("5.00"), Decimal("0.33"), date(2026, 9, 18)),
+        AssetClass.BOND,
+    )
+    acct = make_account(cash="12000", positions=(), marks={})
+    check = check_named(
+        PROFILE.check_rules(acct, date(2026, 9, 21), sell_history=(sale,)), "diversification_bonds"
+    )
+    assert check.deadline == deca.DIVERSIFICATION_DEADLINE
+
+
+def test_a_qualifying_class_reports_the_hold_through_date():
+    lot = Lot("AAA", 300, Decimal("40.00"), Decimal("5.00"), date(2026, 9, 9))  # $12,000
+    acct = make_account(
+        cash="0", positions=(Position("AAA", AssetClass.STOCK, (lot,)),), marks={"AAA": "40.00"}
+    )
+    check = check_named(PROFILE.check_rules(acct, date(2026, 10, 1)), "diversification_stocks")
+    assert check.satisfied is True
+    assert check.deadline == deca.DIVERSIFICATION_HOLD_THROUGH
+    assert "2026-12-04" in check.detail

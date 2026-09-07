@@ -147,3 +147,45 @@ def test_dividend_cannot_be_credited_twice():
     led.settle_dividends(date(2026, 10, 15))
     led.settle_dividends(date(2026, 10, 16))
     assert led.cash == D("95025.00")
+
+
+def test_reconcile_agrees_when_histories_match():
+    led = Ledger(D("100000.00"))
+    f = buy()
+    led.apply_fill(f)
+    rec = led.reconcile([f])
+    assert rec.in_agreement
+    assert len(rec.matched) == 1
+
+
+def test_reconcile_reports_a_price_discrepancy_without_rewriting_history():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy(price="50.00"))
+    rec = led.reconcile([buy(price="50.10")])
+    assert not rec.in_agreement
+    assert len(rec.discrepancies) == 1
+    assert "price" in rec.discrepancies[0].fields
+    assert led.fills[0].price == D("50.00")      # our history is untouched
+
+
+def test_reconcile_flags_a_fill_only_the_platform_has():
+    led = Ledger(D("100000.00"))
+    rec = led.reconcile([buy()])
+    assert len(rec.only_in_statement) == 1
+    assert rec.only_in_ledger == ()
+
+
+def test_reconcile_flags_a_fill_only_we_have():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy())
+    rec = led.reconcile([])
+    assert len(rec.only_in_ledger) == 1
+
+
+def test_reconcile_pairs_duplicates_as_a_multiset():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy(qty=10))
+    led.apply_fill(buy(qty=10))
+    rec = led.reconcile([buy(qty=10)])
+    assert len(rec.matched) == 1
+    assert len(rec.only_in_ledger) == 1

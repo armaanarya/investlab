@@ -82,6 +82,39 @@ class DividendAccrual:
     paid: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class FillDiscrepancy:
+    """A fill the ledger and the platform statement both recorded, but with
+    differing field values."""
+
+    ours: Fill
+    theirs: Fill
+    fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Reconciliation:
+    """A read-only diff against an imported platform statement. Never
+    rewrites our history to match — differences stay visible."""
+
+    matched: tuple[Fill, ...]
+    only_in_ledger: tuple[Fill, ...]
+    only_in_statement: tuple[Fill, ...]
+    discrepancies: tuple[FillDiscrepancy, ...]
+
+    @property
+    def in_agreement(self) -> bool:
+        return not (self.only_in_ledger or self.only_in_statement or self.discrepancies)
+
+    def summary(self) -> str:
+        return (
+            f"matched={len(self.matched)} "
+            f"discrepancies={len(self.discrepancies)} "
+            f"only_in_ledger={len(self.only_in_ledger)} "
+            f"only_in_statement={len(self.only_in_statement)}"
+        )
+
+
 class Ledger:
     """Cash, lots, receivables, liabilities, and fill history for one account."""
 
@@ -354,3 +387,59 @@ class Ledger:
             self._cash += accrual.amount
             settled.append(paid_accrual)
         return tuple(settled)
+
+    # -- reconciliation ---------------------------------------------------------
+
+    def reconcile(self, statement_fills: Sequence[Fill]) -> Reconciliation:
+        """Diff our fill history against the platform's, read-only.
+
+        The platform is authoritative; this never edits our fills to match.
+        Matching, in order: (1) exact identity as a multiset, so equal fills
+        pair off; (2) leftovers pair on (symbol, session, action) and report
+        which fields differ; (3) whatever is still unpaired is ours alone or
+        the platform's alone.
+        """
+
+        def identity_key(f: Fill) -> tuple:
+            return (f.symbol, f.session, f.action, f.quantity, f.price, f.commission, f.fees)
+
+        def pair_key(f: Fill) -> tuple:
+            return (f.symbol, f.session, f.action)
+
+        theirs_remaining = list(statement_fills)
+
+        matched: list[Fill] = []
+        unmatched_ours: list[Fill] = []
+        for our_fill in self._fills:
+            key = identity_key(our_fill)
+            idx = next(
+                (i for i, t in enumerate(theirs_remaining) if identity_key(t) == key), None
+            )
+            if idx is None:
+                unmatched_ours.append(our_fill)
+            else:
+                matched.append(our_fill)
+                del theirs_remaining[idx]
+
+        discrepancies: list[FillDiscrepancy] = []
+        only_in_ledger: list[Fill] = []
+        for our_fill in unmatched_ours:
+            key = pair_key(our_fill)
+            idx = next((i for i, t in enumerate(theirs_remaining) if pair_key(t) == key), None)
+            if idx is None:
+                only_in_ledger.append(our_fill)
+            else:
+                their_fill = theirs_remaining.pop(idx)
+                fields = tuple(
+                    name
+                    for name in ("quantity", "price", "commission", "fees")
+                    if getattr(our_fill, name) != getattr(their_fill, name)
+                )
+                discrepancies.append(FillDiscrepancy(our_fill, their_fill, fields))
+
+        return Reconciliation(
+            matched=tuple(matched),
+            only_in_ledger=tuple(only_in_ledger),
+            only_in_statement=tuple(theirs_remaining),
+            discrepancies=tuple(discrepancies),
+        )
