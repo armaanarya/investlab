@@ -31,6 +31,13 @@ Investment Policy Statement, or a trading note, and it is built so it cannot.
 benchmark. Baselines are mandatory in every backtest precisely so a failure to
 beat them is visible rather than hidden.
 
+## What is not built yet
+
+See [docs/OPEN-TASKS.md](docs/OPEN-TASKS.md) for the running to-do list: the
+backtest engine, baselines and tear sheets, the DECA items that need someone
+with a competition login, and everything Wharton needs once its 2026-27
+materials release on September 15.
+
 ## Setup
 
 Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is installed by uv.
@@ -79,6 +86,7 @@ src/investlab/
   reports/           tear sheets and chart exports
   journal.py         student-authored decision log
 docs/
+  OPEN-TASKS.md      what is left to build, per competition
   rules/             verified competition rules, with sources
   superpowers/specs/ the design spec and the decisions behind it
 ```
