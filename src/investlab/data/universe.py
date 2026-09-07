@@ -18,6 +18,7 @@ universe silently omitting them.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from investlab.contracts import AssetClass, Instrument
 
@@ -170,6 +171,148 @@ _TRUSTS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Real listing venue per symbol, resolved from vendor metadata on 2026-09-07.
+# This matters because DECA SMG restricts its universe to NYSE and NASDAQ, so a
+# placeholder value here silently blocks every legitimate stock at the
+# eligibility gate.
+_EXCHANGES: dict[str, str] = {
+    "AAPL": "NASDAQ",
+    "ABBV": "NYSE",
+    "ABT": "NYSE",
+    "ACN": "NYSE",
+    "ADBE": "NASDAQ",
+    "AMD": "NASDAQ",
+    "AMZN": "NASDAQ",
+    "AVGO": "NASDAQ",
+    "AXP": "NYSE",
+    "BA": "NYSE",
+    "BAC": "NYSE",
+    "BLK": "NYSE",
+    "BRK.B": "NYSE",
+    "CAT": "NYSE",
+    "COST": "NASDAQ",
+    "CRM": "NYSE",
+    "CSCO": "NASDAQ",
+    "CVX": "NYSE",
+    "DIS": "NYSE",
+    "GE": "NYSE",
+    "GOOGL": "NASDAQ",
+    "GS": "NYSE",
+    "HD": "NYSE",
+    "HON": "NASDAQ",
+    "IBM": "NYSE",
+    "INTC": "NASDAQ",
+    "JNJ": "NYSE",
+    "JPM": "NYSE",
+    "KO": "NYSE",
+    "LIN": "NASDAQ",
+    "LOW": "NYSE",
+    "MA": "NYSE",
+    "MCD": "NYSE",
+    "META": "NASDAQ",
+    "MRK": "NYSE",
+    "MS": "NYSE",
+    "MSFT": "NASDAQ",
+    "NFLX": "NASDAQ",
+    "NKE": "NYSE",
+    "NVDA": "NASDAQ",
+    "ORCL": "NYSE",
+    "PEP": "NASDAQ",
+    "PFE": "NYSE",
+    "PG": "NYSE",
+    "PM": "NYSE",
+    "QCOM": "NASDAQ",
+    "SBUX": "NASDAQ",
+    "SPGI": "NYSE",
+    "T": "NYSE",
+    "TMO": "NYSE",
+    "TSLA": "NASDAQ",
+    "TXN": "NASDAQ",
+    "UNH": "NYSE",
+    "UPS": "NYSE",
+    "V": "NYSE",
+    "VZ": "NYSE",
+    "WFC": "NYSE",
+    "WMT": "NASDAQ",
+    "XOM": "NYSE",
+}
+
+# Market capitalisation (or total net assets, for ETFs), resolved from vendor
+# metadata on 2026-09-07. DECA SMG requires >= $25,000,000 and its rules
+# engine rejects an unknown value rather than assuming eligibility, so leaving
+# these unset silently blocks the entire universe. Refresh with
+# `investlab data pull --refresh-metadata` when the universe changes.
+_MARKET_CAPS: dict[str, Decimal] = {
+    "AAPL": Decimal("4669700046848"),
+    "ABBV": Decimal("453194874880"),
+    "ABT": Decimal("188690612224"),
+    "ACN": Decimal("114261827584"),
+    "ADBE": Decimal("105937731584"),
+    "AGG": Decimal("138317873152"),
+    "AMD": Decimal("779621105664"),
+    "AMZN": Decimal("2788369891328"),
+    "AVGO": Decimal("1702714146816"),
+    "AXP": Decimal("220259057664"),
+    "BA": Decimal("167633453056"),
+    "BAC": Decimal("438305488896"),
+    "BLK": Decimal("182345416704"),
+    "BND": Decimal("399067512832"),
+    "BRK.B": Decimal("1100000000000"),
+    "CAT": Decimal("374147776512"),
+    "COST": Decimal("406111289344"),
+    "CRM": Decimal("213346304000"),
+    "CSCO": Decimal("430530461696"),
+    "CVX": Decimal("409190465536"),
+    "DIS": Decimal("181837381632"),
+    "GE": Decimal("349783064576"),
+    "GLD": Decimal("152861196288"),
+    "GOOGL": Decimal("4139343675392"),
+    "GS": Decimal("302413512704"),
+    "HD": Decimal("320308248576"),
+    "HON": Decimal("66433794048"),
+    "IBIT": Decimal("61435101184"),
+    "IBM": Decimal("221297950720"),
+    "INTC": Decimal("506408894464"),
+    "JNJ": Decimal("663276421120"),
+    "JPM": Decimal("953331941376"),
+    "KO": Decimal("378925481984"),
+    "LIN": Decimal("220150300672"),
+    "LOW": Decimal("114707488768"),
+    "LQD": Decimal("32042811392"),
+    "MA": Decimal("507393736704"),
+    "MCD": Decimal("180936867840"),
+    "META": Decimal("1571225468928"),
+    "MRK": Decimal("370889916416"),
+    "MS": Decimal("341943681024"),
+    "MSFT": Decimal("3710545297408"),
+    "NFLX": Decimal("325828280320"),
+    "NKE": Decimal("56966352896"),
+    "NVDA": Decimal("5562502742016"),
+    "ORCL": Decimal("457361195008"),
+    "PEP": Decimal("188002582528"),
+    "PFE": Decimal("162155724800"),
+    "PG": Decimal("340389986304"),
+    "PM": Decimal("284493709312"),
+    "QCOM": Decimal("180224524288"),
+    "SBUX": Decimal("119095803904"),
+    "SHY": Decimal("25913065472"),
+    "SLV": Decimal("34683150336"),
+    "SPGI": Decimal("130746753024"),
+    "T": Decimal("175969271808"),
+    "TLT": Decimal("47046328320"),
+    "TMO": Decimal("226943500288"),
+    "TSLA": Decimal("1398455795712"),
+    "TXN": Decimal("236019728384"),
+    "UNH": Decimal("356470816768"),
+    "UPS": Decimal("87026450432"),
+    "V": Decimal("700273459200"),
+    "VZ": Decimal("208320430080"),
+    "WFC": Decimal("272069214208"),
+    "WMT": Decimal("850021580800"),
+    "XOM": Decimal("655726608384"),
+}
+
+
 def default_universe() -> Universe:
     """The v1 fixed universe: large caps, bond ETFs, mutual funds, and the
     prohibited commodity/crypto trusts, all as of 2026-09-06."""
@@ -181,7 +324,8 @@ def default_universe() -> Universe:
                 symbol=symbol,
                 name=name,
                 asset_class=AssetClass.STOCK,
-                exchange="NYSE/NASDAQ",
+                exchange=_EXCHANGES[symbol],
+                market_cap=_MARKET_CAPS.get(symbol),
             )
         )
 
@@ -192,6 +336,7 @@ def default_universe() -> Universe:
                 name=name,
                 asset_class=AssetClass.ETF,
                 exchange="NYSE Arca",
+                market_cap=_MARKET_CAPS.get(symbol),
             )
         )
 
@@ -212,6 +357,7 @@ def default_universe() -> Universe:
                 name=name,
                 asset_class=AssetClass.ETF,
                 exchange="NYSE Arca",
+                market_cap=_MARKET_CAPS.get(symbol),
                 is_commodity_or_crypto_trust=True,
             )
         )

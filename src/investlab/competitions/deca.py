@@ -85,7 +85,15 @@ DIVERSIFICATION_HOLD_THROUGH = date(2026, 12, 4)
 # "before Nov 1" guard (see Task 5's cash_and_margin check).
 MARGIN_EARLIEST_ENABLE = date(2026, 11, 1)
 
-ELIGIBLE_EXCHANGES = frozenset({"NYSE", "NASDAQ"})
+ELIGIBLE_EXCHANGES = frozenset({"NYSE", "NASDAQ", "NYSEARCA", "ARCA"})
+# NYSE Arca is included by controller ruling, 2026-09-07. DECA rule 3 names
+# "the NASDAQ Stock Market and the New York Stock Exchange", but the same
+# guidelines explicitly permit ETFs and classify them as stocks: "all ETFs
+# (including bond ETFs) are classified as stocks". Nearly every US ETF lists
+# on NYSE Arca, an NYSE-operated venue, so reading "NYSE" to exclude Arca
+# would make the explicit ETF permission a dead letter and block the entire
+# ETF universe. Residual risk if this reading is wrong: the platform rejects
+# the order at entry, which is a visible failure rather than a silent one.
 # Normalized (upper-cased, punctuation stripped) forms that must be REJECTED
 # as unverified rather than silently allowed or silently banned.
 UNVERIFIED_EXCHANGES = frozenset({"NYSEAMERICAN", "AMEX", "NYSEMKT"})

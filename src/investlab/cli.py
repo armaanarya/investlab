@@ -12,6 +12,7 @@ reproducible and what keeps the tool working on a day Yahoo is broken.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -24,7 +25,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from investlab import config as cfg_mod
-from investlab.contracts import AccountState, AssetClass, Lot, Position
+from investlab.contracts import AccountState, AssetClass, Lot, Position, RuleStatus
 from investlab.data.cache import ParquetCache, SymbolNotCachedError
 from investlab.data.universe import BIAS_WARNING, default_universe
 
@@ -341,10 +342,177 @@ def daily(
         due = f" (due {c.deadline})" if c.deadline else ""
         console.print(f"[yellow]RULE:[/yellow] {c.name}{due} — {c.detail}")
 
-    console.print(
-        "\n[dim]Order sheet generation needs the candidate screen, which is "
-        "still being wired. Rule status and portfolio marks above are live.[/dim]"
+    # --- screen, gate, size -------------------------------------------------
+    from investlab.portfolio.sizing import Candidate, size_batch
+    from investlab.screen import load_bars, screen_universe
+
+    universe = default_universe()
+    held = {p.symbol for p in account.positions}
+    bars, missing = load_bars(cache, list(universe.symbols()), today_et())
+    if not bars:
+        console.print("[red]No cached bars.[/red] Run 'investlab data pull' first.")
+        raise typer.Exit(EXIT_NO_DATA)
+
+    instruments = {s: universe.get(s) for s in bars}
+    ranked, skipped = screen_universe(bars, instruments, today_et())
+
+    newest = max((b[-1].session for b in bars.values()), default=None)
+    stale = newest is not None and (today_et() - newest).days > cfg.data.staleness_days
+    if stale:
+        console.print(
+            f"[yellow]STALE DATA:[/yellow] newest bar is {newest}. "
+            "Treat everything below as indicative and re-pull before acting."
+        )
+
+    constraints = prof.sizing_constraints(account)
+
+    # Reserve the compliance requirement before sizing any equity.
+    #
+    # DECA needs $10,000 of net cost in EACH of stocks, mutual funds and bonds
+    # by 2026-10-23, and the tool's own screen only ever proposes equities. Left
+    # alone, the sizer happily commits the entire $100,000 to stocks and leaves
+    # nothing to buy the fund and bond legs with, which is a disqualification
+    # rather than a bad trade. The equity sleeve gets what is left after the
+    # outstanding legs are set aside.
+    reserved = Decimal("0")
+    if profile == "deca":
+        target = cfg.deca.diversification_target
+        for bucket in (AssetClass.MUTUAL_FUND, AssetClass.BOND):
+            have = sum(
+                (p.net_cost for p in account.positions if p.asset_class is bucket),
+                Decimal("0"),
+            )
+            reserved += max(Decimal("0"), target - have)
+        if reserved:
+            console.print(
+                f"[cyan]Reserved ${reserved:,.2f}[/cyan] of cash for the mutual fund and "
+                f"bond legs due {cfg.deca.diversification_deadline}. "
+                f"Equity sleeve is sized against the remaining "
+                f"${max(Decimal('0'), constraints.spendable_cash - reserved):,.2f}."
+            )
+            constraints = replace(
+                constraints,
+                spendable_cash=max(Decimal("0"), constraints.spendable_cash - reserved),
+            )
+
+    blocked = []
+    eligible: list = []
+    for cand in ranked:
+        if len(eligible) >= limit:
+            break
+        if cand.symbol in held:
+            continue
+        ok, reason = prof.is_eligible(cand.instrument, bars[cand.symbol][-1])
+        if ok:
+            eligible.append(cand)
+        else:
+            blocked.append((cand.symbol, reason))
+
+    # Size the whole shortlist in one batch, not one call per candidate.
+    # size_batch reserves cash sequentially in rank order, so a later
+    # candidate cannot spend a dollar an earlier one already committed.
+    # Sizing each independently produced eight orders totalling $216,000
+    # against a $100,000 account.
+    by_rank = tuple(
+        Candidate(
+            symbol=c.symbol,
+            price_bound=c.close,
+            protective_reference=c.protective_reference,
+            rank=i,
+            rationale=f"rank {c.score:.0f}/100, 21d momentum {c.momentum_21d * 100:+.1f}%",
+        )
+        for i, c in enumerate(eligible)
     )
+    results = size_batch(by_rank, constraints)
+
+    orders = []
+    for cand, result in zip(eligible, results, strict=True):
+        if hasattr(result, "quantity"):
+            orders.append((cand, result))
+        else:
+            blocked.append((cand.symbol, f"{result.reason.value}: {result.detail}"))
+
+    # A profile with an unresolved rule does not get to hand out an order
+    # sheet. Wharton's 2026-27 capital, approved ETF list and client mandate
+    # are unknown until Sept 15, so sizes computed against last season's
+    # numbers would look authoritative while being guesses. The screen still
+    # runs; it is labeled research rather than instructions.
+    unresolved_rules = [c for c in checks if not c.satisfied and c.status is RuleStatus.INCOMPLETE]
+    if unresolved_rules and orders:
+        console.print(
+            Panel(
+                "[bold]No order sheet.[/bold] "
+                + "; ".join(c.detail for c in unresolved_rules)
+                + "\n\nThe ranking below is research only. Sizes are withheld because "
+                "they would be computed against unconfirmed capital and an "
+                "unconfirmed eligible-security list.",
+                title="Rules unresolved",
+                border_style="yellow",
+            )
+        )
+        rt = Table(title="Candidate ranking (research only, not an order sheet)")
+        rt.add_column("Rank", justify="right")
+        rt.add_column("Ticker")
+        rt.add_column("Score", justify="right")
+        rt.add_column("21d momentum", justify="right")
+        rt.add_column("RSI14", justify="right")
+        rt.add_column("Trend")
+        for i, (cand, _) in enumerate(orders, 1):
+            rt.add_row(
+                str(i),
+                cand.symbol,
+                f"{cand.score:.0f}",
+                f"{cand.momentum_21d * 100:+.1f}%",
+                f"{cand.rsi14:.0f}",
+                ("above" if cand.above_ema50 else "below") + " EMA50",
+            )
+        console.print(rt)
+        console.print(
+            "[dim]Score is a cross-sectional rank from 0 to 100. It is not a "
+            "probability and must never be reported as one.[/dim]"
+        )
+        orders = []
+
+    if orders:
+        t = Table(title="Type these into the platform", header_style="bold")
+        t.add_column("Ticker")
+        t.add_column("Action")
+        t.add_column("Shares", justify="right")
+        t.add_column("Est. cost", justify="right")
+        t.add_column("Stop ref", justify="right")
+        t.add_column("Planned risk", justify="right")
+        t.add_column("If it gaps 20%", justify="right")
+        t.add_column("Bound by")
+        for cand, o in orders:
+            t.add_row(
+                cand.symbol,
+                o.action.value,
+                f"{o.quantity:,}",
+                f"${o.estimated_notional + o.estimated_commission:,.2f}",
+                f"${o.protective_reference:,.2f}" if o.protective_reference else "-",
+                f"${o.planned_risk:,.2f}",
+                f"[red]${o.gap_stress_loss:,.2f}[/red]",
+                o.binding_constraint,
+            )
+        console.print(t)
+        console.print(
+            "[dim]Planned risk is not maximum loss. The gap column is what the same "
+            "position costs on a 20% overnight move, which no stop prevents.[/dim]"
+        )
+    else:
+        console.print("\n[bold]No orders today.[/bold] Nothing cleared every constraint.")
+
+    if blocked:
+        bt = Table(title="Screened but blocked", header_style="bold")
+        bt.add_column("Ticker")
+        bt.add_column("Why", overflow="fold")
+        for sym, why in blocked[:12]:
+            bt.add_row(sym, why)
+        console.print(bt)
+
+    if skipped:
+        console.print(f"[dim]{len(skipped)} symbols skipped for short history.[/dim]")
+
     console.print(
         "\n[bold]After you enter any trade, record why:[/bold] "
         "[cyan]investlab journal add[/cyan]\n"

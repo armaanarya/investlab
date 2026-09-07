@@ -98,10 +98,7 @@ def percentile_ranks(
             as_of=as_of,
             n_eligible=n_eligible,
             required=min_eligible,
-            detail=(
-                f"only {n_eligible} eligible name(s) at {as_of}, "
-                f"need at least {min_eligible}"
-            ),
+            detail=(f"only {n_eligible} eligible name(s) at {as_of}, need at least {min_eligible}"),
         )
 
     if ascending:
