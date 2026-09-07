@@ -38,7 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -64,8 +64,7 @@ class SymbolNotCachedError(LookupError):
     def __init__(self, symbol: str) -> None:
         self.symbol = symbol
         super().__init__(
-            f"{symbol!r} has never been pulled into the cache. Run: "
-            f"{PULL_COMMAND_HINT} {symbol}"
+            f"{symbol!r} has never been pulled into the cache. Run: {PULL_COMMAND_HINT} {symbol}"
         )
 
 
@@ -164,7 +163,7 @@ class ParquetCache:
             by_symbol.setdefault(bar.symbol, []).append(bar)
 
         sidecar = self._load_sidecar()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         for symbol, new_bars in by_symbol.items():
             existing_rows = self._read_raw_rows(symbol)
@@ -216,9 +215,7 @@ class ParquetCache:
         return (min(sessions), max(sessions))
 
     def symbols(self) -> list[str]:
-        return sorted(
-            _unsafe_symbol(p.stem) for p in self.root.glob("*.parquet")
-        )
+        return sorted(_unsafe_symbol(p.stem) for p in self.root.glob("*.parquet"))
 
     # -- manifest ----------------------------------------------------------
 

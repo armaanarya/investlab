@@ -128,9 +128,7 @@ class TestSessionsBetween:
         assert sessions_between(date(2026, 11, 27), date(2026, 11, 23)) == []
 
     def test_single_session_range(self):
-        assert sessions_between(date(2026, 11, 27), date(2026, 11, 27)) == [
-            date(2026, 11, 27)
-        ]
+        assert sessions_between(date(2026, 11, 27), date(2026, 11, 27)) == [date(2026, 11, 27)]
 
 
 class TestAddBusinessDays:

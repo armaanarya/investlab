@@ -118,9 +118,7 @@ def _load_account(profile: str, cache: ParquetCache, cfg: cfg_mod.AppConfig) -> 
     """
     path = _portfolio_path(profile)
     if not path.exists():
-        starting = (
-            cfg.deca.starting_cash if profile == "deca" else cfg.wharton.starting_cash
-        )
+        starting = cfg.deca.starting_cash if profile == "deca" else cfg.wharton.starting_cash
         console.print(
             Panel(
                 f"No portfolio file at [cyan]{path}[/cyan].\n\n"
@@ -185,14 +183,14 @@ def doctor() -> None:
     t.add_column("Detail")
 
     symbols = list(cache.symbols()) if cfg.data.cache_dir.exists() else []
-    t.add_row("Cache", "ok" if symbols else "empty", f"{len(symbols)} symbols in {cfg.data.cache_dir}")
+    t.add_row(
+        "Cache", "ok" if symbols else "empty", f"{len(symbols)} symbols in {cfg.data.cache_dir}"
+    )
 
     stale_note = "no data"
     if symbols:
         try:
-            newest = max(
-                (cache.coverage(s)[1] for s in symbols if cache.coverage(s)), default=None
-            )
+            newest = max((cache.coverage(s)[1] for s in symbols if cache.coverage(s)), default=None)
             if newest:
                 age = (today_et() - newest).days
                 stale_note = f"newest bar {newest} ({age}d old)"
@@ -200,7 +198,11 @@ def doctor() -> None:
             stale_note = f"unreadable: {exc}"
     t.add_row("Freshness", "ok" if symbols else "n/a", stale_note)
 
-    t.add_row("DECA", "ready", f"${cfg.deca.starting_cash:,} start, ${cfg.deca.commission_per_trade}/trade")
+    t.add_row(
+        "DECA",
+        "ready",
+        f"${cfg.deca.starting_cash:,} start, ${cfg.deca.commission_per_trade}/trade",
+    )
     t.add_row(
         "Wharton",
         "unverified" if not cfg.wharton.season_verified else "ready",
@@ -281,7 +283,11 @@ def rules(profile: str = typer.Option("deca", help="deca or wharton")) -> None:
     prof = _load_profile(profile, cfg)
     account = _load_account(profile, cache, cfg)
 
-    console.print(Panel(prof.execution_note(today_et()), title="How your orders will fill", border_style="cyan"))
+    console.print(
+        Panel(
+            prof.execution_note(today_et()), title="How your orders will fill", border_style="cyan"
+        )
+    )
 
     checks = prof.check_rules(account, today_et())
     t = Table(show_header=True, header_style="bold")
@@ -325,7 +331,9 @@ def daily(
             border_style="cyan",
         )
     )
-    console.print(Panel(prof.execution_note(today_et()), title="How these fill", border_style="cyan"))
+    console.print(
+        Panel(prof.execution_note(today_et()), title="How these fill", border_style="cyan")
+    )
 
     checks = prof.check_rules(account, today_et())
     blocking = [c for c in checks if not c.satisfied]
@@ -447,8 +455,9 @@ def journal_list(limit: int = typer.Option(15)) -> None:
     journal = Journal(cfg.journal_path)
     entries = journal.entries()
     if not entries:
-        console.print("Journal is empty. Record your first entry with "
-                      "[cyan]investlab journal add[/cyan].")
+        console.print(
+            "Journal is empty. Record your first entry with [cyan]investlab journal add[/cyan]."
+        )
         return
 
     intact = journal.verify_chain()

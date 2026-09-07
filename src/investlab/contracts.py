@@ -13,7 +13,7 @@ clock are timezone-aware and stored in UTC.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from enum import Enum
 from typing import Protocol, runtime_checkable

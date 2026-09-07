@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from investlab.contracts import Action, AssetClass, Fill
+from investlab.contracts import Action, Fill
 from investlab.portfolio.ledger import (
     DuplicateDividendError,
     InsufficientCashError,
@@ -15,11 +15,15 @@ from investlab.portfolio.ledger import (
 D = Decimal
 
 
-def buy(symbol="AAA", qty=100, price="50.00", commission="5.00", fees="0", session=date(2026, 9, 8)):
+def buy(
+    symbol="AAA", qty=100, price="50.00", commission="5.00", fees="0", session=date(2026, 9, 8)
+):
     return Fill(symbol, Action.BUY, qty, D(price), D(commission), D(fees), session)
 
 
-def sell(symbol="AAA", qty=100, price="55.00", commission="5.00", fees="0.02", session=date(2026, 9, 15)):
+def sell(
+    symbol="AAA", qty=100, price="55.00", commission="5.00", fees="0.02", session=date(2026, 9, 15)
+):
     return Fill(symbol, Action.SELL, qty, D(price), D(commission), D(fees), session)
 
 
@@ -52,7 +56,7 @@ def test_fifo_sell_consumes_the_oldest_lot_first():
     led.apply_fill(buy(qty=10, price="10.00", commission="0", session=date(2026, 9, 8)))
     led.apply_fill(buy(qty=10, price="20.00", commission="0", session=date(2026, 9, 9)))
     led.apply_fill(sell(qty=10, price="30.00", commission="0", fees="0", session=date(2026, 9, 10)))
-    assert led.realized_pnl == D("200.00")          # sold the $10 lot
+    assert led.realized_pnl == D("200.00")  # sold the $10 lot
     assert led.positions[0].quantity == 10
     assert led.positions[0].net_cost == D("200.00")  # the $20 lot survives
 
@@ -112,7 +116,7 @@ def test_split_fraction_becomes_cash_in_lieu_at_basis_not_pnl():
     led = Ledger(D("100000.00"))
     led.apply_fill(buy(qty=5, price="30.00", commission="0"))
     cash_before, basis_before = led.cash, led.positions[0].net_cost
-    record = led.apply_split("AAA", D("1.5"), date(2026, 10, 1))   # 7.5 -> 7 shares
+    record = led.apply_split("AAA", D("1.5"), date(2026, 10, 1))  # 7.5 -> 7 shares
     pos = led.positions[0]
     assert pos.quantity == 7
     assert record.cash_in_lieu > D("0")
@@ -128,7 +132,7 @@ def test_dividend_is_a_receivable_on_ex_date_and_cash_on_pay_date():
     assert led.receivables == D("25.00")
     equity_at_ex = led.snapshot({"AAA": D("50.00")}, date(2026, 10, 1)).equity
 
-    assert led.settle_dividends(date(2026, 10, 10)) == ()      # before pay date
+    assert led.settle_dividends(date(2026, 10, 10)) == ()  # before pay date
     assert led.receivables == D("25.00")
 
     paid = led.settle_dividends(date(2026, 10, 15))
@@ -165,7 +169,7 @@ def test_reconcile_reports_a_price_discrepancy_without_rewriting_history():
     assert not rec.in_agreement
     assert len(rec.discrepancies) == 1
     assert "price" in rec.discrepancies[0].fields
-    assert led.fills[0].price == D("50.00")      # our history is untouched
+    assert led.fills[0].price == D("50.00")  # our history is untouched
 
 
 def test_reconcile_flags_a_fill_only_the_platform_has():

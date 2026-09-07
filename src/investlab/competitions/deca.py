@@ -254,7 +254,11 @@ def _eligibility_reason(
     or exchange problem instead of the prohibition), then exchange, then
     price (today, then the day before), then market cap."""
     if instrument.is_commodity_or_crypto_trust:
-        return False, _PROHIBITION_REASON.format(symbol=instrument.symbol), BlockReason.PROHIBITED_SECURITY
+        return (
+            False,
+            _PROHIBITION_REASON.format(symbol=instrument.symbol),
+            BlockReason.PROHIBITED_SECURITY,
+        )
 
     normalized = _normalize_exchange(instrument.exchange)
     if normalized in UNVERIFIED_EXCHANGES:

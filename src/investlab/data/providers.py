@@ -138,7 +138,9 @@ class YFinanceProvider:
             frame = self._safe_download(pending, start, end)
             for vendor_symbol in list(pending):
                 original = vendor_to_original[vendor_symbol]
-                parsed = self._parse_symbol(frame, vendor_symbol, original) if frame is not None else []
+                parsed = (
+                    self._parse_symbol(frame, vendor_symbol, original) if frame is not None else []
+                )
                 if parsed:
                     bars_by_vendor_symbol[vendor_symbol] = parsed
                     pending.remove(vendor_symbol)
@@ -151,7 +153,9 @@ class YFinanceProvider:
             result.extend(bars_by_vendor_symbol.get(vendor_symbol, []))
         return result
 
-    def _safe_download(self, vendor_symbols: list[str], start: date, end: date) -> pd.DataFrame | None:
+    def _safe_download(
+        self, vendor_symbols: list[str], start: date, end: date
+    ) -> pd.DataFrame | None:
         try:
             return self._download(vendor_symbols, start, end)
         except Exception:
@@ -172,7 +176,9 @@ class YFinanceProvider:
             threads=False,
         )
 
-    def _parse_symbol(self, frame: pd.DataFrame, vendor_symbol: str, original_symbol: str) -> list[Bar]:
+    def _parse_symbol(
+        self, frame: pd.DataFrame, vendor_symbol: str, original_symbol: str
+    ) -> list[Bar]:
         try:
             sub = frame.xs(vendor_symbol, axis=1, level=1)
         except (KeyError, ValueError):

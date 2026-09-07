@@ -16,9 +16,7 @@ import pytest
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line(
-        "markers", "live: hits the network; requires INVESTLAB_LIVE=1 to run"
-    )
+    config.addinivalue_line("markers", "live: hits the network; requires INVESTLAB_LIVE=1 to run")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

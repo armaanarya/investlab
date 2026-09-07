@@ -7,12 +7,12 @@ liabilities, and the full fill history all live here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Mapping, Sequence
 
-from investlab.contracts import Action, AssetClass, AccountState, Fill, Lot, Position
+from investlab.contracts import AccountState, Action, AssetClass, Fill, Lot, Position
 from investlab.money import ZERO, round_shares, usd
 
 _SELL_ACTIONS = frozenset({Action.SELL, Action.REDUCE, Action.EXIT})
@@ -412,9 +412,7 @@ class Ledger:
         unmatched_ours: list[Fill] = []
         for our_fill in self._fills:
             key = identity_key(our_fill)
-            idx = next(
-                (i for i, t in enumerate(theirs_remaining) if identity_key(t) == key), None
-            )
+            idx = next((i for i, t in enumerate(theirs_remaining) if identity_key(t) == key), None)
             if idx is None:
                 unmatched_ours.append(our_fill)
             else:

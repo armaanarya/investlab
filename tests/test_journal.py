@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -15,7 +15,7 @@ from investlab.journal import (
 )
 
 D = Decimal
-AT = datetime(2026, 9, 8, 20, 5, tzinfo=timezone.utc)
+AT = datetime(2026, 9, 8, 20, 5, tzinfo=UTC)
 
 
 def facts(symbol="AAA"):
@@ -54,7 +54,13 @@ def test_the_journal_never_generates_reasoning():
     from investlab import journal
 
     source = inspect.getsource(journal)
-    for banned in ("def generate_", "def suggest_", "def draft_", "def autocomplete", "def template_"):
+    for banned in (
+        "def generate_",
+        "def suggest_",
+        "def draft_",
+        "def autocomplete",
+        "def template_",
+    ):
         assert banned not in source
     sig = inspect.signature(journal.Journal.record)
     assert sig.parameters["reasoning"].default is inspect.Parameter.empty
@@ -66,7 +72,7 @@ def test_entries_are_append_only_and_a_correction_references_the_original(tmp_pa
     corrected = j.amend(first.entry_id, "I mis-stated the stop; it was 46.00.", recorded_at=AT)
     entries = j.entries()
     assert len(entries) == 2
-    assert entries[0].reasoning == "Original reasoning."     # history untouched
+    assert entries[0].reasoning == "Original reasoning."  # history untouched
     assert corrected.kind is EntryKind.CORRECTION
     assert corrected.corrects == first.entry_id
 
@@ -85,7 +91,7 @@ def test_storage_is_one_json_object_per_line(tmp_path):
     lines = path.read_text().splitlines()
     assert len(lines) == 2
     assert json.loads(lines[0])["facts"]["symbol"] == "AAA"
-    assert json.loads(lines[0])["facts"]["price"] == "50.00"      # Decimal as string
+    assert json.loads(lines[0])["facts"]["price"] == "50.00"  # Decimal as string
 
 
 def test_hash_chain_detects_edited_history(tmp_path):
@@ -104,12 +110,16 @@ def test_hash_chain_detects_edited_history(tmp_path):
 
 
 def test_facts_from_order_carries_the_binding_constraint(tmp_path):
-    from investlab.portfolio.sizing import size_order
     from investlab.contracts import SizingConstraints
+    from investlab.portfolio.sizing import size_order
 
     con = SizingConstraints(
-        equity=D("100000.00"), spendable_cash=D("100000.00"), risk_fraction=D("0.01"),
-        position_ceiling_fraction=D("0.10"), min_shares=1, min_price=D("3.00"),
+        equity=D("100000.00"),
+        spendable_cash=D("100000.00"),
+        risk_fraction=D("0.01"),
+        position_ceiling_fraction=D("0.10"),
+        min_shares=1,
+        min_price=D("3.00"),
         commission_per_trade=D("0"),
     )
     order = size_order("AAA", D("50.00"), D("46.00"), con)
@@ -122,9 +132,7 @@ def test_facts_from_order_carries_the_binding_constraint(tmp_path):
 def test_evidence_packet_contains_student_text_facts_and_a_provenance_footer(tmp_path):
     j = Journal(tmp_path / "journal.jsonl")
     j.record(facts(), "My own reasoning, in my own words.", recorded_at=AT)
-    packet = export_evidence_packet(
-        j.entries(), data_sources=("yfinance 1.7.0",), generated_at=AT
-    )
+    packet = export_evidence_packet(j.entries(), data_sources=("yfinance 1.7.0",), generated_at=AT)
     assert "My own reasoning, in my own words." in packet
     assert "AAA" in packet and "200" in packet and "50.00" in packet
     assert "rsi_14" in packet

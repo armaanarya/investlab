@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from investlab.contracts import Action, BlockReason, BlockedOrder, SizedOrder, SizingConstraints
+from investlab.contracts import Action, BlockedOrder, BlockReason, SizedOrder, SizingConstraints
 from investlab.portfolio.sizing import BindingConstraint, Candidate, size_batch, size_order
 
 D = Decimal
@@ -45,7 +45,7 @@ def test_worked_example_with_commissions_cash_binds_at_199_shares():
     assert isinstance(order, SizedOrder)
     assert order.quantity == 199
     assert order.estimated_commission == D("5.00")
-    assert order.planned_risk == D("806.00")          # 199*4 + 5 + 5
+    assert order.planned_risk == D("806.00")  # 199*4 + 5 + 5
     assert order.binding_constraint == BindingConstraint.SPENDABLE_CASH.value
 
 
@@ -114,9 +114,13 @@ def test_batch_reserves_cash_sequentially_so_no_dollar_is_spent_twice():
         ),
         con,
     )
-    assert [r.symbol for r in results] == ["AAA", "BBB"]        # rank order, deterministic
+    assert [r.symbol for r in results] == ["AAA", "BBB"]  # rank order, deterministic
     spent = sum(
-        (r.estimated_notional + r.estimated_commission for r in results if isinstance(r, SizedOrder)),
+        (
+            r.estimated_notional + r.estimated_commission
+            for r in results
+            if isinstance(r, SizedOrder)
+        ),
         D("0"),
     )
     assert spent <= D("12000.00")

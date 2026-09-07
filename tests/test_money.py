@@ -1,9 +1,10 @@
 from decimal import Decimal
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
-from investlab.money import CENT, ZERO, Money, round_shares, usd, usd_ceil
+from investlab.money import round_shares, usd, usd_ceil
 
 
 def test_usd_quantizes_to_cents_half_up():
@@ -43,13 +44,13 @@ def test_round_shares_returns_int():
     assert isinstance(round_shares(Decimal("5.5")), int)
 
 
-@given(st.integers(min_value=-10**9, max_value=10**9), st.integers(min_value=0, max_value=999))
+@given(st.integers(min_value=-(10**9), max_value=10**9), st.integers(min_value=0, max_value=999))
 def test_round_shares_never_exceeds_input(whole, frac):
     value = Decimal(whole) + Decimal(frac) / Decimal(1000)
     assert Decimal(round_shares(value)) <= value
 
 
-@given(st.integers(min_value=-10**9, max_value=10**9))
+@given(st.integers(min_value=-(10**9), max_value=10**9))
 def test_usd_is_idempotent(cents):
     once = usd(Decimal(cents) / 100)
     assert usd(once) == once

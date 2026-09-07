@@ -18,13 +18,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
 from importlib import metadata as _importlib_metadata
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from investlab.contracts import Action, SizedOrder
 
@@ -184,8 +184,12 @@ class Journal:
                 "reasoning must be the student's own words; it is never defaulted"
             )
         return self._append(
-            kind=kind, facts=facts, reasoning=reasoning, author=author,
-            corrects=None, recorded_at=recorded_at,
+            kind=kind,
+            facts=facts,
+            reasoning=reasoning,
+            author=author,
+            corrects=None,
+            recorded_at=recorded_at,
         )
 
     def amend(
@@ -207,8 +211,12 @@ class Journal:
             raise KeyError(f"unknown journal entry {entry_id!r}")
         original = existing[entry_id]
         return self._append(
-            kind=EntryKind.CORRECTION, facts=original.facts, reasoning=reasoning,
-            author=author, corrects=entry_id, recorded_at=recorded_at,
+            kind=EntryKind.CORRECTION,
+            facts=original.facts,
+            reasoning=reasoning,
+            author=author,
+            corrects=entry_id,
+            recorded_at=recorded_at,
         )
 
     def _append(
@@ -224,7 +232,7 @@ class Journal:
         existing = self.entries()
         entry_id = f"JE-{len(existing) + 1:06d}"
         prev_hash = existing[-1].entry_hash if existing else ""
-        at = recorded_at if recorded_at is not None else datetime.now(timezone.utc)
+        at = recorded_at if recorded_at is not None else datetime.now(UTC)
 
         payload = {
             "entry_id": entry_id,

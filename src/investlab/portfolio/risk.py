@@ -10,11 +10,11 @@ never an invisible auto-reset, and it always carries the student's own note.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from enum import Enum
-from typing import Mapping
 
 from investlab.contracts import AccountState, BlockedOrder, BlockReason, SizingConstraints
 from investlab.money import ZERO, usd
@@ -83,9 +83,7 @@ def aggregate_open_risk(
         if reference is None:
             is_stressed = True
             planned_risk = usd(Decimal(qty) * mark * limits.missing_reference_stress)
-            basis = (
-                f"{limits.missing_reference_stress * 100}% stress: no protective reference"
-            )
+            basis = f"{limits.missing_reference_stress * 100}% stress: no protective reference"
             unreferenced.append(pos.symbol)
             if policy is MissingReferencePolicy.BLOCK:
                 blocks_new_risk = True
@@ -156,8 +154,7 @@ def concentration(
         sector_totals[sector] = sector_totals.get(sector, ZERO) + value
 
     sector_weights = {
-        sector: (value / equity if equity != 0 else ZERO)
-        for sector, value in sector_totals.items()
+        sector: (value / equity if equity != 0 else ZERO) for sector, value in sector_totals.items()
     }
 
     breaches: list[ConcentrationBreach] = []
@@ -168,9 +165,7 @@ def concentration(
             )
     for sector, weight in sector_weights.items():
         if weight > limits.max_sector_weight:
-            breaches.append(
-                ConcentrationBreach("sector", sector, weight, limits.max_sector_weight)
-            )
+            breaches.append(ConcentrationBreach("sector", sector, weight, limits.max_sector_weight))
 
     return ConcentrationReport(
         position_weights=position_weights,
@@ -190,10 +185,7 @@ def cash_floor_check(state: AccountState, *, limits: RiskLimits = RiskLimits()) 
     equity = state.equity
     floor = limits.cash_floor_fraction * equity
     satisfied = state.cash >= floor
-    detail = (
-        f"cash {state.cash} vs floor {floor} "
-        f"({limits.cash_floor_fraction} of equity {equity})"
-    )
+    detail = f"cash {state.cash} vs floor {floor} ({limits.cash_floor_fraction} of equity {equity})"
     return RiskCheck(name="cash_floor", satisfied=satisfied, detail=detail)
 
 

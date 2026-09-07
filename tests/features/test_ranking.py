@@ -15,7 +15,6 @@ from datetime import date
 import numpy as np
 import pandas as pd
 import pytest
-
 from investlab.features.ranking import (
     MIN_ELIGIBLE,
     InsufficientCoverage,
@@ -174,8 +173,7 @@ def test_cross_section_extracts_value_at_date():
 def test_cross_section_feeds_directly_into_percentile_ranks():
     symbols = _symbols(20)
     series_by_symbol = {
-        s: pd.Series([float(i)], index=pd.Index([D], name="session"))
-        for i, s in enumerate(symbols)
+        s: pd.Series([float(i)], index=pd.Index([D], name="session")) for i, s in enumerate(symbols)
     }
     values = cross_section(series_by_symbol, D)
     out = percentile_ranks(values, D, eligible=symbols)

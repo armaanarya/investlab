@@ -1,6 +1,7 @@
 from decimal import Decimal
 
-from hypothesis import assume, given, settings, strategies as st
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
 from investlab.contracts import BlockedOrder, SizedOrder, SizingConstraints
 from investlab.portfolio.sizing import Candidate, planned_loss, size_batch, size_order
@@ -64,12 +65,14 @@ def test_the_solver_is_maximal_one_more_share_would_breach(scenario):
 @given(scenarios(), st.integers(min_value=2, max_value=6))
 def test_a_batch_never_spends_more_than_available_cash(scenario, n):
     price, stop, con = scenario
-    candidates = tuple(
-        Candidate(f"S{i:02d}", price, stop, rank=i) for i in range(n)
-    )
+    candidates = tuple(Candidate(f"S{i:02d}", price, stop, rank=i) for i in range(n))
     results = size_batch(candidates, con)
     spent = sum(
-        (r.estimated_notional + r.estimated_commission for r in results if isinstance(r, SizedOrder)),
+        (
+            r.estimated_notional + r.estimated_commission
+            for r in results
+            if isinstance(r, SizedOrder)
+        ),
         D("0"),
     )
     assert spent <= con.spendable_cash

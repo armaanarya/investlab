@@ -36,5 +36,17 @@ build-backend = "uv_build"
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+select = ["E", "F", "B", "I", "UP", "DTZ", "FURB"]
+ignore = [
+    # typer.Option/Argument in argument defaults is Typer's documented API,
+    # not a mutable-default bug.
+    "B008",
+    # Decimal("100000") over Decimal(100000). Verbose, but it keeps every
+    # money literal in one form, so a value copied from a rules document is
+    # never silently switched to a float constructor.
+    "FURB157",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -194,9 +194,7 @@ def atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Se
         return result
 
     prev_close = c.shift(1)
-    tr = pd.concat(
-        [h - lo, (h - prev_close).abs(), (lo - prev_close).abs()], axis=1
-    ).max(axis=1)
+    tr = pd.concat([h - lo, (h - prev_close).abs(), (lo - prev_close).abs()], axis=1).max(axis=1)
     # No prior close for the first bar - do not fabricate a TR from H - L.
     tr.iloc[0] = np.nan
 

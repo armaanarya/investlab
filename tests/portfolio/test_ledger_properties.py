@@ -1,7 +1,8 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from hypothesis import HealthCheck, assume, given, settings, strategies as st
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from investlab.contracts import Action, Fill
 from investlab.portfolio.ledger import InsufficientCashError, InsufficientSharesError, Ledger

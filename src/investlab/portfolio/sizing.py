@@ -35,9 +35,7 @@ class BindingConstraint(str, Enum):
     POSITION_CEILING = "position_ceiling"
 
 
-def _exit_commission(
-    quantity: int, exit_price: Decimal, constraints: SizingConstraints
-) -> Decimal:
+def _exit_commission(quantity: int, exit_price: Decimal, constraints: SizingConstraints) -> Decimal:
     """Exit commission plus the proportional sell fee, estimated at
     `exit_price` and rounded up so a rounding error can never make an order
     look affordable when it is not."""

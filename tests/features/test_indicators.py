@@ -10,7 +10,7 @@ crash, because a downstream rank or sizing decision would treat it as data.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 import numpy as np

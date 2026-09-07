@@ -33,8 +33,7 @@ def test_session_definitions_agree_across_the_competition_window():
         if cal.is_session(d) != deca.is_business_day(d)
     ]
     assert disagreements == [], (
-        "calendar.py and competitions/deca.py disagree on which days are "
-        f"sessions: {disagreements}"
+        f"calendar.py and competitions/deca.py disagree on which days are sessions: {disagreements}"
     )
 
 
