@@ -173,7 +173,7 @@ def test_plain_stock_at_five_dollars_is_eligible():
 
 
 def test_stock_at_four_ninety_nine_is_rejected():
-    ok, reason = WhartonProfile().is_eligible(stock("AAA"), bar("AAA", "4.99"))
+    ok, _reason = WhartonProfile().is_eligible(stock("AAA"), bar("AAA", "4.99"))
     assert ok is False
     blocked = WhartonProfile().evaluate(stock("AAA"), bar("AAA", "4.99"))
     assert blocked.reason is BlockReason.PRICE_BELOW_MINIMUM
@@ -213,17 +213,23 @@ def test_ibit_is_rejected_on_both_grounds():
 
 def test_leveraged_product_rejected_as_derivative():
     lev = Instrument("TQQQ", "3x QQQ", AssetClass.ETF, "NASDAQ", is_leveraged=True)
-    assert WhartonProfile().evaluate(lev, bar("TQQQ", "50")).reason is BlockReason.PROHIBITED_SECURITY
+    assert (
+        WhartonProfile().evaluate(lev, bar("TQQQ", "50")).reason is BlockReason.PROHIBITED_SECURITY
+    )
 
 
 def test_mutual_fund_is_not_an_eligible_wharton_asset_class():
     mf = Instrument("VFIAX", "Vanguard 500", AssetClass.MUTUAL_FUND, "NASDAQ")
-    assert WhartonProfile().evaluate(mf, bar("VFIAX", "500")).reason is BlockReason.PROHIBITED_SECURITY
+    assert (
+        WhartonProfile().evaluate(mf, bar("VFIAX", "500")).reason is BlockReason.PROHIBITED_SECURITY
+    )
 
 
 def test_missing_exchange_is_ineligible():
     assert (
-        WhartonProfile().evaluate(Instrument("XXX", "?", AssetClass.STOCK, ""), bar("XXX", "10")).reason
+        WhartonProfile()
+        .evaluate(Instrument("XXX", "?", AssetClass.STOCK, ""), bar("XXX", "10"))
+        .reason
         is BlockReason.INELIGIBLE_EXCHANGE
     )
 
@@ -427,7 +433,12 @@ def test_short_position_is_an_error():
     lot = Lot("AAA", -5, Decimal("50"), Decimal("25"), date(2026, 9, 29))
     position = Position("AAA", AssetClass.STOCK, (lot,))
     acct = AccountState(
-        date(2026, 10, 1), Decimal("100"), (position,), {"AAA": Decimal("50")}, Decimal("0"), Decimal("0")
+        date(2026, 10, 1),
+        Decimal("100"),
+        (position,),
+        {"AAA": Decimal("50")},
+        Decimal("0"),
+        Decimal("0"),
     )
     c = named(WhartonProfile().check_rules(acct, date(2026, 10, 1)), "margin_and_shorting_ban")
     assert c.status is RuleStatus.VERIFIED and c.satisfied is False
