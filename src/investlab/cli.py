@@ -377,6 +377,125 @@ def portfolio_init(
     console.print(f"[green]Created[/green] {path} with ${starting:,} cash.")
 
 
+journal_app = typer.Typer(help="Your own decision log. Required by both competitions.")
+app.add_typer(journal_app, name="journal")
+
+
+@journal_app.command("add")
+def journal_add(
+    symbol: str = typer.Option(..., "--symbol", "-s", help="Ticker you traded."),
+    action: str = typer.Option(..., "--action", "-a", help="buy, sell, hold, exit, review"),
+    quantity: int = typer.Option(0, "--quantity", "-q"),
+    price: str = typer.Option("0", "--price", "-p"),
+    profile: str = typer.Option("deca", help="deca or wharton"),
+) -> None:
+    """Record why you made a trade, in your own words.
+
+    The tool supplies the surrounding facts. You supply the reasoning, and it
+    is stored verbatim. This is deliberate: Wharton requires a Trading Note per
+    trade and audits them, and both competitions require the analysis to be the
+    team's own. Nothing here drafts, suggests, or autocompletes your reasoning.
+    """
+    from investlab.contracts import Action as ActionEnum
+    from investlab.journal import DecisionFacts, Journal
+
+    cfg = cfg_mod.load()
+    try:
+        act = ActionEnum(action.lower())
+    except ValueError as exc:
+        valid = ", ".join(a.value for a in ActionEnum)
+        console.print(f"[red]Unknown action[/red] {action!r}. Use one of: {valid}")
+        raise typer.Exit(EXIT_BAD_CONFIG) from exc
+
+    console.print(
+        Panel(
+            "Write your own reasoning. Why this security, why this size, why now,\n"
+            "and what would make you change your mind.\n\n"
+            "[dim]Stored word for word. Wharton audits trading notes and states\n"
+            '"You must use actual trading notes from trades you made on WInS."[/dim]',
+            title=f"{act.value.upper()} {quantity} {symbol.upper()}",
+            border_style="cyan",
+        )
+    )
+    reasoning = typer.prompt("Your reasoning").strip()
+    if not reasoning:
+        console.print("[red]Empty reasoning is not recorded.[/red]")
+        raise typer.Exit(EXIT_BAD_CONFIG)
+
+    facts = DecisionFacts(
+        session=today_et(),
+        symbol=symbol.upper(),
+        action=act,
+        quantity=quantity,
+        price=Decimal(price),
+        indicators={},
+        binding_constraints=(),
+        data_source=f"investlab cache ({', '.join(cfg.data.providers)})",
+        note_fields={"profile": profile},
+    )
+    journal = Journal(cfg.journal_path)
+    entry = journal.record(facts, reasoning)
+    console.print(f"[green]Recorded[/green] {entry.entry_id} to {cfg.journal_path}")
+
+
+@journal_app.command("list")
+def journal_list(limit: int = typer.Option(15)) -> None:
+    """Show recent entries and verify the log has not been tampered with."""
+    from investlab.journal import Journal
+
+    cfg = cfg_mod.load()
+    journal = Journal(cfg.journal_path)
+    entries = journal.entries()
+    if not entries:
+        console.print("Journal is empty. Record your first entry with "
+                      "[cyan]investlab journal add[/cyan].")
+        return
+
+    intact = journal.verify_chain()
+    t = Table(show_header=True, header_style="bold")
+    t.add_column("When")
+    t.add_column("What")
+    t.add_column("Your reasoning", overflow="fold")
+    for e in entries[-limit:]:
+        t.add_row(
+            e.recorded_at.strftime("%Y-%m-%d %H:%M"),
+            f"{e.facts.action.value} {e.facts.quantity} {e.facts.symbol}",
+            e.reasoning,
+        )
+    console.print(t)
+    console.print(
+        f"[green]Hash chain intact[/green] across {len(entries)} entries."
+        if intact
+        else "[red]Hash chain BROKEN. The log has been edited outside the tool.[/red]"
+    )
+
+
+@journal_app.command("export")
+def journal_export(
+    out: Path = typer.Option(Path("runs/evidence_packet.md"), help="Where to write."),
+) -> None:
+    """Export an evidence packet: your entries plus a citable provenance footer."""
+    from investlab.journal import Journal, export_evidence_packet
+
+    cfg = cfg_mod.load()
+    journal = Journal(cfg.journal_path)
+    entries = journal.entries()
+    if not entries:
+        console.print("Nothing to export yet.")
+        raise typer.Exit(EXIT_OK)
+
+    text = export_evidence_packet(
+        entries, data_sources=list(cfg.data.providers), generated_at=now_et()
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text)
+    console.print(f"[green]Wrote[/green] {len(entries)} entries to {out}")
+    console.print(
+        "[dim]The reasoning in this packet is yours. Cite the tool in APA only for "
+        "the figures it computed, never for the analysis.[/dim]"
+    )
+
+
 @app.command()
 def version() -> None:
     """Show version and provenance."""
