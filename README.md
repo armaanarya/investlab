@@ -104,10 +104,15 @@ and repeat violations disqualify the team. The tool hard-blocks these.
 
 **DECA's diversification test is on net cost, not market value.** At least
 $10,000 in each of stocks, mutual funds and bonds by **Oct 23, 2026, 4:00 p.m.
-ET**, held to Dec 4. The $5 commission does not count toward the minimum, so a
-purchase of exactly $10,000 leaves you $5 short. Budget above it. A position
-*declining* below $10,000 needs no action; *selling* starts a one-business-day
-clock.
+ET**, held to Dec 4.
+
+Net cost means shares times price. The $5 commission sits outside it, so the
+trap is thinking in terms of what leaves your account: spend $10,000 *gross*
+and you land at $9,995 of net cost, which fails. **Budget $10,005 gross per
+asset class.** The tool checks this and tells you the shortfall in dollars.
+
+A position *declining* below $10,000 needs no action. *Selling* out of a class
+starts a one-business-day clock to restore it.
 
 **Wharton's 2026-27 rules do not exist yet.** They release **Sept 15, 2026**.
 Until a season config is supplied, the Wharton profile stays unverified and
