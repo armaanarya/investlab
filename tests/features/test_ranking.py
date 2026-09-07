@@ -15,6 +15,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 import pytest
+
 from investlab.features.ranking import (
     MIN_ELIGIBLE,
     InsufficientCoverage,

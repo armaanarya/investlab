@@ -46,6 +46,10 @@ ignore = [
     # money literal in one form, so a value copied from a rules document is
     # never silently switched to a float constructor.
     "FURB157",
+    # `class X(str, Enum)` over `StrEnum`. The codebase is consistent on this,
+    # starting with contracts.py, and the two differ in str() behaviour, so
+    # switching would be a semantic change dressed as a style fix.
+    "UP042",
 ]
 
 [tool.pytest.ini_options]

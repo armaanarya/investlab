@@ -67,10 +67,6 @@ class Screened:
         return self.close - (Decimal(2) * self.atr14)
 
 
-def _to_float(x: Decimal) -> float:
-    return float(x)
-
-
 def screen_universe(
     bars_by_symbol: dict[str, list[Bar]],
     instruments: dict[str, Instrument],

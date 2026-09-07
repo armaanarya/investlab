@@ -300,7 +300,10 @@ class DrawdownMonitor:
             stage=new_stage,
             risk_multiplier=self._risk_multiplier(new_stage),
             entries_allowed=new_stage is not DrawdownStage.HALTED,
-            detail=f"drawdown {drawdown} vs reduce {self._limits.reduce_at} / halt {self._limits.halt_at}",
+            detail=(
+                f"drawdown {drawdown} vs reduce {self._limits.reduce_at} "
+                f"/ halt {self._limits.halt_at}"
+            ),
         )
         return self._state
 
