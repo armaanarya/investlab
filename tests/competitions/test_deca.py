@@ -16,6 +16,46 @@ from decimal import Decimal
 import pytest
 
 from investlab.competitions import deca
+from investlab.contracts import AssetClass, Bar, BlockReason, Instrument
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+PROFILE = deca.DecaProfile()
+
+
+def make_instrument(
+    symbol="AAA",
+    exchange="NYSE",
+    market_cap="50000000",
+    asset_class=AssetClass.STOCK,
+    is_commodity_or_crypto_trust=False,
+):
+    return Instrument(
+        symbol=symbol,
+        name=symbol,
+        asset_class=asset_class,
+        exchange=exchange,
+        market_cap=Decimal(market_cap) if market_cap is not None else None,
+        is_commodity_or_crypto_trust=is_commodity_or_crypto_trust,
+    )
+
+
+def make_bar(symbol="AAA", close="50.00", session=date(2026, 9, 9)):
+    price = Decimal(close)
+    return Bar(
+        symbol=symbol,
+        session=session,
+        open=price,
+        high=price,
+        low=price,
+        close=price,
+        adj_close=price,
+        volume=1000,
+        source="test",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Task 1: verified constants and 2026 NYSE business-day arithmetic
@@ -77,3 +117,95 @@ def test_verified_money_and_date_constants():
     assert deca.GAME_END == date(2026, 12, 4)
     assert deca.DIVERSIFICATION_DEADLINE == date(2026, 10, 23)
     assert deca.DIVERSIFICATION_HOLD_THROUGH == date(2026, 12, 4)
+
+
+# ---------------------------------------------------------------------------
+# Task 2: eligibility
+# ---------------------------------------------------------------------------
+
+
+def test_nyse_and_nasdaq_are_eligible():
+    for exch in ("NYSE", "NASDAQ"):
+        ok, reason = PROFILE.is_eligible(make_instrument(exchange=exch), make_bar(close="50.00"))
+        assert ok is True
+        assert reason == ""
+
+
+def test_otc_and_pink_sheets_rejected():
+    for exch in ("OTC", "Pink Sheets", "OTCQB"):
+        ok, reason = PROFILE.is_eligible(make_instrument(exchange=exch), make_bar(close="50.00"))
+        assert ok is False
+        assert "NYSE and NASDAQ" in reason
+
+
+def test_nyse_american_rejected_as_unverified():
+    ok, reason = PROFILE.is_eligible(
+        make_instrument(exchange="NYSE American"), make_bar(close="50.00")
+    )
+    assert ok is False
+    assert "UNVERIFIED" in reason
+    block = PROFILE.eligibility_block(
+        make_instrument(exchange="NYSE American"), make_bar(close="50.00")
+    )
+    assert block.reason is BlockReason.UNVERIFIED_INSTRUMENT
+
+
+def test_price_below_three_dollars_rejected_and_exactly_three_accepted():
+    ok, reason = PROFILE.is_eligible(make_instrument(), make_bar(close="2.99"))
+    assert ok is False
+    assert "2.99" in reason
+    assert "3.00" in reason
+    ok, reason = PROFILE.is_eligible(make_instrument(), make_bar(close="3.00"))
+    assert ok is True
+    assert reason == ""
+
+
+def test_prior_session_below_three_dollars_rejected():
+    today = make_bar(close="3.50", session=date(2026, 9, 9))
+    yesterday = make_bar(close="2.95", session=date(2026, 9, 8))
+    ok, reason = PROFILE.is_eligible(make_instrument(), today, prior_bar=yesterday)
+    assert ok is False
+    assert "2.95" in reason
+    assert "day before" in reason
+
+
+def test_market_cap_floor_is_twenty_five_million():
+    ok, _ = PROFILE.is_eligible(make_instrument(market_cap="24999999"), make_bar(close="50.00"))
+    assert ok is False
+    ok, _ = PROFILE.is_eligible(make_instrument(market_cap="25000000"), make_bar(close="50.00"))
+    assert ok is True
+
+
+def test_unknown_market_cap_is_rejected_not_assumed():
+    ok, reason = PROFILE.is_eligible(make_instrument(market_cap=None), make_bar(close="50.00"))
+    assert ok is False
+    assert "unknown" in reason.lower()
+
+
+def test_ibit_rejected_with_three_grounds():
+    ibit = make_instrument(symbol="IBIT", exchange="NASDAQ", is_commodity_or_crypto_trust=True)
+    ok, reason = PROFILE.is_eligible(ibit, make_bar(symbol="IBIT", close="60.00"))
+    assert ok is False
+    for token in ("IBIT", "GLD", "bitcoin", "commodit", "rule 3"):
+        assert token.lower() in reason.lower()
+    block = PROFILE.eligibility_block(ibit, make_bar(symbol="IBIT", close="60.00"))
+    assert block.reason is BlockReason.PROHIBITED_SECURITY
+
+
+def test_gld_rejected():
+    gld = make_instrument(symbol="GLD", exchange="NYSE", is_commodity_or_crypto_trust=True)
+    ok, reason = PROFILE.is_eligible(gld, make_bar(symbol="GLD", close="200.00"))
+    assert ok is False
+    assert "prohibit" in reason.lower()
+
+
+def test_prohibition_outranks_every_other_check():
+    # A prohibited trust that is ALSO cheap and on OTC still reports the prohibition.
+    bad = make_instrument(
+        symbol="IBIT",
+        exchange="OTC",
+        market_cap=None,
+        is_commodity_or_crypto_trust=True,
+    )
+    _, reason = PROFILE.is_eligible(bad, make_bar(symbol="IBIT", close="1.00"))
+    assert "bitcoin" in reason.lower()

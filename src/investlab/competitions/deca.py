@@ -21,8 +21,16 @@ prospects is not this module's job and must never appear here.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+
+from investlab.contracts import (
+    Bar,
+    BlockedOrder,
+    BlockReason,
+    Instrument,
+)
 
 # ---------------------------------------------------------------------------
 # Task 1: verified constants and 2026 NYSE business-day arithmetic
@@ -142,3 +150,135 @@ def calendar_days_until(start: date, end: date) -> int:
     _assert_covered(start)
     _assert_covered(end)
     return (end - start).days
+
+
+# ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
+
+
+def _money(value: Decimal) -> str:
+    """Format a Decimal as US currency with thousands separators, e.g.
+    Decimal("10005") -> "$10,005.00". Used in every rule-check detail string
+    so numbers are unmissable and consistently formatted."""
+    quantized = value.quantize(Decimal("0.01"))
+    return f"${quantized:,.2f}"
+
+
+def _normalize_exchange(exchange: str) -> str:
+    """Upper-case and strip all non-alphanumeric characters, so 'NYSE
+    American', 'NYSE AMERICAN', 'NYSEAMERICAN', 'AMEX' and 'NYSE MKT' all
+    land on the same normalized token."""
+    return "".join(ch for ch in exchange.upper() if ch.isalnum())
+
+
+# ---------------------------------------------------------------------------
+# Task 2: DecaProfile and eligibility
+# ---------------------------------------------------------------------------
+
+_PROHIBITION_REASON = (
+    "{symbol} is a commodity- or crypto-backed trust and is prohibited under "
+    "three independent grounds: (1) bitcoin is named in the DECA SMG "
+    "prohibited-instrument list; (2) commodities are named in the same "
+    "prohibited-instrument list; (3) DECA SMG rule 3 defines the eligible "
+    "universe as stocks and mutual funds, and a commodity trust is neither. "
+    "IBIT and GLD are both prohibited under this same reasoning."
+)
+
+
+def _eligibility_reason(
+    instrument: Instrument, bar: Bar, prior_bar: Bar | None
+) -> tuple[bool, str, BlockReason | None]:
+    """The single source of truth for eligibility. Check order is
+    load-bearing: prohibition first (so a banned trust never reports a price
+    or exchange problem instead of the prohibition), then exchange, then
+    price (today, then the day before), then market cap."""
+    if instrument.is_commodity_or_crypto_trust:
+        return False, _PROHIBITION_REASON.format(symbol=instrument.symbol), BlockReason.PROHIBITED_SECURITY
+
+    normalized = _normalize_exchange(instrument.exchange)
+    if normalized in UNVERIFIED_EXCHANGES:
+        reason = (
+            f"{instrument.exchange} eligibility is UNVERIFIED against a primary "
+            f"DECA SMG source; treated as ineligible until confirmed, not guessed."
+        )
+        return False, reason, BlockReason.UNVERIFIED_INSTRUMENT
+    if normalized not in ELIGIBLE_EXCHANGES:
+        reason = (
+            f"{instrument.symbol} trades on {instrument.exchange}, which is not "
+            f"eligible; DECA SMG restricts the universe to NYSE and NASDAQ only."
+        )
+        return False, reason, BlockReason.INELIGIBLE_EXCHANGE
+
+    if bar.close < MIN_SHARE_PRICE:
+        reason = (
+            f"{instrument.symbol} closed at {_money(bar.close)} on "
+            f"{bar.session.isoformat()}, below the {_money(MIN_SHARE_PRICE)} minimum."
+        )
+        return False, reason, BlockReason.PRICE_BELOW_MINIMUM
+    if prior_bar is not None and prior_bar.close < MIN_SHARE_PRICE:
+        reason = (
+            f"{instrument.symbol} closed at {_money(prior_bar.close)} the day "
+            f"before ({prior_bar.session.isoformat()}), below the "
+            f"{_money(MIN_SHARE_PRICE)} minimum required day-before AND day-of."
+        )
+        return False, reason, BlockReason.PRICE_BELOW_MINIMUM
+
+    if instrument.market_cap is None:
+        reason = (
+            f"{instrument.symbol} has an unknown market cap; DECA SMG requires "
+            f">= {_money(MIN_MARKET_CAP)} and an unknown value is rejected, not "
+            f"assumed eligible."
+        )
+        return False, reason, BlockReason.INSUFFICIENT_EVIDENCE
+    if instrument.market_cap < MIN_MARKET_CAP:
+        reason = (
+            f"{instrument.symbol} has a market cap of {_money(instrument.market_cap)}, "
+            f"below the {_money(MIN_MARKET_CAP)} minimum."
+        )
+        return False, reason, BlockReason.MARKET_CAP_BELOW_MINIMUM
+
+    return True, "", None
+
+
+@dataclass(frozen=True, slots=True)
+class DecaProfile:
+    """`CompetitionProfile` implementation for the DECA Stock Market Game.
+
+    `allows_margin` and `allows_shorting` default to False even though DECA's
+    rules permit both -- a deliberate v1 posture (design spec Sec 5), not a
+    reflection of the rules themselves. `sec_fee_rate` is UNVERIFIED and
+    exists as a configurable knob for exactly that reason.
+    """
+
+    sec_fee_rate: Decimal = DEFAULT_SEC_FEE_RATE
+    risk_fraction: Decimal = DEFAULT_RISK_FRACTION
+    allows_margin: bool = False
+    allows_shorting: bool = False
+    name: str = "deca"
+    starting_cash: Decimal = STARTING_CASH
+    commission_per_trade: Decimal = COMMISSION_PER_TRADE
+
+    def is_eligible(
+        self, instrument: Instrument, bar: Bar, prior_bar: Bar | None = None
+    ) -> tuple[bool, str]:
+        """Return (eligible, reason). `prior_bar` is an additional optional
+        parameter beyond the `CompetitionProfile` protocol signature, used to
+        enforce the day-before >= $3.00 leg of the price rule when the caller
+        supplies it. See the contract-defect note in the implementation
+        report: the protocol's `is_eligible(instrument, bar)` cannot express
+        a two-session rule with a single bar."""
+        ok, reason, _ = _eligibility_reason(instrument, bar, prior_bar)
+        return ok, reason
+
+    def eligibility_block(
+        self, instrument: Instrument, bar: Bar, prior_bar: Bar | None = None
+    ) -> BlockedOrder | None:
+        """Same evaluation as `is_eligible`, packaged as a `BlockedOrder` for
+        callers that need the structured `BlockReason` rather than just a
+        boolean and a string. Returns None when eligible."""
+        ok, reason, block_reason = _eligibility_reason(instrument, bar, prior_bar)
+        if ok:
+            return None
+        assert block_reason is not None  # every False branch sets one
+        return BlockedOrder(symbol=instrument.symbol, reason=block_reason, detail=reason)
