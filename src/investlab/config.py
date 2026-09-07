@@ -62,8 +62,8 @@ class RiskConfig:
 class DecaConfig:
     """DECA SMG. Every value below is verified; see docs/rules/deca-verified.md."""
 
-    starting_cash: Decimal = Decimal("100000")
-    commission_per_trade: Decimal = Decimal("5")
+    starting_cash: Decimal = Decimal(100000)
+    commission_per_trade: Decimal = Decimal(5)
     # UNVERIFIED. The SEC fee is charged on sells but its rate appears in no
     # DECA or SIFMA document we could reach. Treated as an assumption and
     # labeled as such wherever it affects a number the student sees.
@@ -75,13 +75,13 @@ class DecaConfig:
     diversification_deadline: date = date(2026, 10, 23)
     student_names_deadline: date = date(2026, 10, 16)
 
-    diversification_minimum: Decimal = Decimal("10000")
+    diversification_minimum: Decimal = Decimal(10000)
     # Budget above the minimum because DECA measures net cost MINUS the $5 fee,
     # so a purchase of exactly $10,000 lands $5 short of the requirement.
-    diversification_target: Decimal = Decimal("10100")
+    diversification_target: Decimal = Decimal(10100)
 
-    min_price: Decimal = Decimal("3")
-    min_market_cap: Decimal = Decimal("25000000")
+    min_price: Decimal = Decimal(3)
+    min_market_cap: Decimal = Decimal(25000000)
     min_shares_per_buy: int = 10
     position_ceiling_fraction: Decimal = Decimal("0.30")  # 20% x 1.5
 
@@ -116,10 +116,10 @@ class WhartonConfig:
     # Provisional. 2025-26 was $500,000. The $100,000 figure that appears in
     # StockTrak's own boilerplate FAQ and across secondary sites is wrong for
     # this competition.
-    starting_cash: Decimal = Decimal("500000")
-    commission_per_trade: Decimal = Decimal("25")
-    commission_per_bond: Decimal = Decimal("10")
-    min_price: Decimal = Decimal("5")
+    starting_cash: Decimal = Decimal(500000)
+    commission_per_trade: Decimal = Decimal(25)
+    commission_per_bond: Decimal = Decimal(10)
+    min_price: Decimal = Decimal(5)
 
     materials_release: date = date(2026, 9, 15)
     trading_start: date = date(2026, 9, 28)

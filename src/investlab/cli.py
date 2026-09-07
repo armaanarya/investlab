@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import typer
 from rich.console import Console
@@ -41,6 +42,26 @@ EXIT_OK = 0
 EXIT_BAD_CONFIG = 2
 EXIT_NO_DATA = 3
 EXIT_RULE_UNRESOLVED = 4
+
+
+EASTERN = ZoneInfo("America/New_York")
+
+
+def today_et() -> date:
+    """Today's date in US/Eastern, which is the only timezone the rules use.
+
+    Both competitions state their deadlines in ET: DECA's diversification cut
+    is 2026-10-23 at 4:00 p.m. ET and its orders price at the 4:00 p.m. ET
+    close. Using the machine's local date instead would be wrong for anyone
+    west of Eastern: at 10 p.m. Pacific on October 22 it is already October 23
+    in New York, so a local-date tool would report a day of slack on a
+    deadline that has already passed.
+    """
+    return datetime.now(EASTERN).date()
+
+
+def now_et() -> datetime:
+    return datetime.now(EASTERN)
 
 
 def _portfolio_path(profile: str) -> Path:
@@ -110,7 +131,7 @@ def _load_account(profile: str, cache: ParquetCache, cfg: cfg_mod.AppConfig) -> 
                 border_style="yellow",
             )
         )
-        return AccountState(as_of=date.today(), cash=starting, positions=())
+        return AccountState(as_of=today_et(), cash=starting, positions=())
 
     raw = json.loads(path.read_text())
     positions: list[Position] = []
@@ -132,7 +153,7 @@ def _load_account(profile: str, cache: ParquetCache, cfg: cfg_mod.AppConfig) -> 
             Position(symbol=p["symbol"], asset_class=AssetClass(p["asset_class"]), lots=lots)
         )
         try:
-            bars = cache.read(p["symbol"], date.today() - timedelta(days=10), date.today())
+            bars = cache.read(p["symbol"], today_et() - timedelta(days=10), today_et())
             marks[p["symbol"]] = bars[-1].close if bars else Decimal(str(p["lots"][0]["price"]))
         except SymbolNotCachedError:
             missing.append(p["symbol"])
@@ -145,7 +166,7 @@ def _load_account(profile: str, cache: ParquetCache, cfg: cfg_mod.AppConfig) -> 
         )
 
     return AccountState(
-        as_of=date.fromisoformat(raw["as_of"]) if "as_of" in raw else date.today(),
+        as_of=date.fromisoformat(raw["as_of"]) if "as_of" in raw else today_et(),
         cash=Decimal(str(raw.get("cash", 0))),
         positions=tuple(positions),
         marks=marks,
@@ -173,7 +194,7 @@ def doctor() -> None:
                 (cache.coverage(s)[1] for s in symbols if cache.coverage(s)), default=None
             )
             if newest:
-                age = (date.today() - newest).days
+                age = (today_et() - newest).days
                 stale_note = f"newest bar {newest} ({age}d old)"
         except Exception as exc:  # noqa: BLE001 - doctor must never crash
             stale_note = f"unreadable: {exc}"
@@ -188,7 +209,7 @@ def doctor() -> None:
         else f"${cfg.wharton.starting_cash:,} start",
     )
 
-    days = (cfg.deca.diversification_deadline - date.today()).days
+    days = (cfg.deca.diversification_deadline - today_et()).days
     t.add_row(
         "DECA diversification",
         "urgent" if days <= 14 else "pending",
@@ -213,7 +234,7 @@ def data_pull(
         if symbols
         else list(universe.symbols())
     )
-    end = date.today()
+    end = today_et()
     start = end - timedelta(days=days)
 
     console.print(f"Pulling [bold]{len(wanted)}[/bold] symbols, {start} to {end}...")
@@ -260,9 +281,9 @@ def rules(profile: str = typer.Option("deca", help="deca or wharton")) -> None:
     prof = _load_profile(profile, cfg)
     account = _load_account(profile, cache, cfg)
 
-    console.print(Panel(prof.execution_note(date.today()), title="How your orders will fill", border_style="cyan"))
+    console.print(Panel(prof.execution_note(today_et()), title="How your orders will fill", border_style="cyan"))
 
-    checks = prof.check_rules(account, date.today())
+    checks = prof.check_rules(account, today_et())
     t = Table(show_header=True, header_style="bold")
     t.add_column("Rule")
     t.add_column("OK")
@@ -299,14 +320,14 @@ def daily(
 
     console.print(
         Panel(
-            f"[bold]{prof.name}[/bold]  ·  {date.today()}  ·  "
+            f"[bold]{prof.name}[/bold]  ·  {today_et()}  ·  "
             f"equity ${account.equity:,.2f}  ·  cash ${account.cash:,.2f}",
             border_style="cyan",
         )
     )
-    console.print(Panel(prof.execution_note(date.today()), title="How these fill", border_style="cyan"))
+    console.print(Panel(prof.execution_note(today_et()), title="How these fill", border_style="cyan"))
 
-    checks = prof.check_rules(account, date.today())
+    checks = prof.check_rules(account, today_et())
     blocking = [c for c in checks if not c.satisfied]
     for c in blocking:
         due = f" (due {c.deadline})" if c.deadline else ""
@@ -342,7 +363,7 @@ def portfolio_init(
         json.dumps(
             {
                 "profile": profile,
-                "as_of": date.today().isoformat(),
+                "as_of": today_et().isoformat(),
                 "cash": str(starting),
                 "positions": [],
                 "_note": (
@@ -360,7 +381,7 @@ def portfolio_init(
 def version() -> None:
     """Show version and provenance."""
     console.print("investlab 0.1.0")
-    console.print(f"[dim]run at {datetime.now().isoformat(timespec='seconds')}[/dim]")
+    console.print(f"[dim]run at {now_et().isoformat(timespec='seconds')}[/dim]")
 
 
 if __name__ == "__main__":
