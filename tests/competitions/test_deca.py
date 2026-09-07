@@ -22,6 +22,7 @@ from investlab.contracts import (
     AssetClass,
     Bar,
     BlockReason,
+    CompetitionProfile,
     Fill,
     Instrument,
     Lot,
@@ -448,3 +449,93 @@ def test_a_qualifying_class_reports_the_hold_through_date():
     assert check.satisfied is True
     assert check.deadline == deca.DIVERSIFICATION_HOLD_THROUGH
     assert "2026-12-04" in check.detail
+
+
+# ---------------------------------------------------------------------------
+# Task 5: check_rules and execution_note
+# ---------------------------------------------------------------------------
+
+
+def test_check_rules_is_never_empty_even_for_an_empty_account():
+    checks = PROFILE.check_rules(make_account(cash="100000"), date(2026, 9, 8))
+    assert checks != []
+    names = {c.name for c in checks}
+    assert {
+        "diversification_stocks",
+        "diversification_mutual_funds",
+        "diversification_bonds",
+        "diversification_deadline",
+        "position_ceiling",
+        "cash_and_margin",
+    } <= names
+
+
+def test_deadline_countdown_reports_days_remaining():
+    check = check_named(
+        PROFILE.check_rules(make_account(cash="100000"), date(2026, 9, 8)), "diversification_deadline"
+    )
+    assert check.deadline == date(2026, 10, 23)
+    assert "33 trading" in check.detail
+    assert "45 calendar" in check.detail
+
+
+def test_sec_fee_rate_is_reported_as_an_unverified_assumption():
+    check = check_named(
+        PROFILE.check_rules(make_account(cash="100000"), date(2026, 9, 8)), "sec_fee_rate"
+    )
+    assert check.status is deca.RuleStatus.INCOMPLETE
+    assert "UNVERIFIED" in check.detail
+    assert "0.0000278" in check.detail
+
+
+def test_appreciated_position_past_the_ceiling_is_satisfied_but_blocks_adds():
+    # Bought 100 x $200 = $20,000 (20% of $100,000). Now marked $310 = $31,000 of $100,000.
+    lot = Lot("AAA", 100, Decimal("200.00"), Decimal("5.00"), date(2026, 9, 9))
+    acct = make_account(
+        cash="69000", positions=(Position("AAA", AssetClass.STOCK, (lot,)),), marks={"AAA": "310.00"}
+    )
+    assert acct.equity == Decimal("100000")
+    check = check_named(PROFILE.check_rules(acct, date(2026, 11, 2)), "position_ceiling")
+    assert check.satisfied is True
+    assert "31.0" in check.detail
+    assert "no sale is required" in check.detail.lower()
+    assert PROFILE.can_add_to(acct, "AAA")[0] is False
+
+
+def test_negative_cash_without_margin_is_unsatisfied():
+    acct = make_account(cash="-500", positions=(), marks={})
+    check = check_named(PROFILE.check_rules(acct, date(2026, 11, 2)), "cash_and_margin")
+    assert check.satisfied is False
+    assert "7.00" in check.detail
+
+
+def test_margin_enabled_before_november_first_is_flagged():
+    profile = deca.DecaProfile(allows_margin=True)
+    check = check_named(
+        profile.check_rules(make_account(cash="100000"), date(2026, 10, 5)), "cash_and_margin"
+    )
+    assert check.satisfied is False
+    assert "November 1" in check.detail
+
+
+def test_execution_note_makes_same_day_close_unmissable():
+    note = PROFILE.execution_note(date(2026, 9, 9))  # a Wednesday
+    assert "SAME DAY" in note
+    assert "2026-09-09" in note  # fills at today's close
+    assert "2026-09-10" in note  # after-hours goes to the next close
+    assert "4:00" in note and "9:30" in note
+    assert "limit" in note.lower() and "do not rest" in note.lower()
+
+
+def test_execution_note_on_a_saturday_points_at_the_next_business_day():
+    note = PROFILE.execution_note(date(2026, 11, 21))  # Saturday
+    assert "2026-11-23" in note
+
+
+def test_deca_profile_satisfies_the_frozen_protocol():
+    assert isinstance(PROFILE, CompetitionProfile)
+    assert PROFILE.name == "deca"
+    assert PROFILE.starting_cash == Decimal("100000")
+    assert PROFILE.commission_per_trade == Decimal("5")
+    assert PROFILE.allows_margin is False
+    assert PROFILE.allows_shorting is False

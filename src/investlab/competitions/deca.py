@@ -516,8 +516,136 @@ class DecaProfile:
         today: date,
         sell_history: tuple[ClassifiedFill, ...] = (),
     ) -> list[RuleCheck]:
-        """Every DECA rule evaluated against the current portfolio. `today`
-        and `sell_history` are extra optional parameters beyond the
-        `CompetitionProfile` protocol's `check_rules(account, today)` --
-        see the contract-defect note in the implementation report."""
-        return self.diversification_checks(account, today, sell_history)
+        """Every DECA rule evaluated against the current portfolio, in
+        order: the three diversification buckets, the diversification
+        deadline countdown, the position ceiling, cash/margin posture, and
+        the unverified SEC fee rate. `sell_history` is an extra optional
+        parameter beyond the `CompetitionProfile` protocol's
+        `check_rules(account, today)` -- see the contract-defect note in the
+        implementation report."""
+        checks = list(self.diversification_checks(account, today, sell_history))
+        checks.append(self._diversification_deadline_check(today))
+        checks.append(self._position_ceiling_check(account))
+        checks.append(self._cash_and_margin_check(account, today))
+        checks.append(self._sec_fee_rate_check())
+        return checks
+
+    def _diversification_deadline_check(self, today: date) -> RuleCheck:
+        if today <= DIVERSIFICATION_DEADLINE:
+            trading = trading_days_until(today, DIVERSIFICATION_DEADLINE)
+            calendar = calendar_days_until(today, DIVERSIFICATION_DEADLINE)
+            detail = (
+                f"{trading} trading days and {calendar} calendar days remain "
+                f"until the diversification deadline of "
+                f"{DIVERSIFICATION_DEADLINE.isoformat()}."
+            )
+            satisfied = True
+        else:
+            detail = (
+                f"The diversification deadline of "
+                f"{DIVERSIFICATION_DEADLINE.isoformat()} has passed."
+            )
+            satisfied = False
+        return RuleCheck(
+            name="diversification_deadline",
+            status=RuleStatus.VERIFIED,
+            satisfied=satisfied,
+            detail=detail,
+            deadline=DIVERSIFICATION_DEADLINE,
+        )
+
+    def _position_ceiling_check(self, account: AccountState) -> RuleCheck:
+        """Always `satisfied=True`: holding an appreciated position past the
+        30% ceiling is compliant (no sale is required). This check only
+        reports which symbols, if any, are at or above the ceiling and are
+        therefore blocked from further buys -- it never recommends a sale."""
+        over_ceiling = []
+        for position in account.positions:
+            if position.quantity <= 0:
+                continue
+            weight = self.position_weight(account, position.symbol)
+            if weight >= POSITION_CEILING_FRACTION:
+                over_ceiling.append((position.symbol, weight))
+
+        if not over_ceiling:
+            detail = (
+                f"No position is at or above the "
+                f"{_pct(POSITION_CEILING_FRACTION)} position ceiling."
+            )
+        else:
+            named = ", ".join(f"{sym} at {_pct(w)}" for sym, w in over_ceiling)
+            detail = (
+                f"{named} of equity, at or above the "
+                f"{_pct(POSITION_CEILING_FRACTION)} ceiling. No sale is required; "
+                f"further buys in the named symbol(s) are blocked."
+            )
+        return RuleCheck(
+            name="position_ceiling", status=RuleStatus.VERIFIED, satisfied=True, detail=detail
+        )
+
+    def _cash_and_margin_check(self, account: AccountState, today: date) -> RuleCheck:
+        if self.allows_margin and today < MARGIN_EARLIEST_ENABLE:
+            detail = (
+                f"allows_margin=True, but margin behavior is modeled only from "
+                f"November 1, 2026 onward in v1; as of {today.isoformat()}, "
+                f"treat margin as unavailable."
+            )
+            return RuleCheck(
+                name="cash_and_margin", status=RuleStatus.VERIFIED, satisfied=False, detail=detail
+            )
+
+        if account.cash < 0 and not self.allows_margin:
+            detail = (
+                f"Cash balance is {_money(account.cash)}, negative, with "
+                f"allows_margin=False. DECA SMG charges 7.00%/yr interest on "
+                f"negative cash and credits 0.75%/yr on positive cash; this "
+                f"account state is not modeled without margin enabled and must "
+                f"be resolved."
+            )
+            return RuleCheck(
+                name="cash_and_margin", status=RuleStatus.VERIFIED, satisfied=False, detail=detail
+            )
+
+        detail = f"Cash balance is {_money(account.cash)}."
+        return RuleCheck(
+            name="cash_and_margin", status=RuleStatus.VERIFIED, satisfied=True, detail=detail
+        )
+
+    def _sec_fee_rate_check(self) -> RuleCheck:
+        detail = (
+            f"SEC fee rate on sells is UNVERIFIED against a primary DECA SMG "
+            f"source. This module assumes {self.sec_fee_rate} as a documented "
+            f"placeholder until a primary source confirms the real rate."
+        )
+        return RuleCheck(
+            name="sec_fee_rate", status=RuleStatus.INCOMPLETE, satisfied=True, detail=detail
+        )
+
+    def execution_note(self, today: date) -> str:
+        """One line (well, a few) telling the student exactly when today's
+        orders fill. DECA fills at end of day, never intraday: an order
+        entered 9:30a-4:00p ET on a trading day fills at THAT SAME DAY's
+        closing price; entered after 4:00p ET, on a weekend, or on a
+        holiday, it fills at the next business day's close. Limit orders do
+        not rest past the initial attempt to price the transaction."""
+        if is_business_day(today):
+            same_day = today
+            after_hours_close = next_business_day(today)
+            return (
+                f"Orders entered 9:30a-4:00p ET on {same_day.isoformat()} fill "
+                f"at {same_day.isoformat()}'s SAME DAY closing price. Orders "
+                f"entered after 4:00p ET on {same_day.isoformat()} fill at the "
+                f"next business day's close, {after_hours_close.isoformat()}. "
+                f"Limit orders do not rest: DECA SMG will not hold a limit "
+                f"order past the initial attempt to price the transaction."
+            )
+        next_session = next_business_day(today)
+        return (
+            f"{today.isoformat()} is not a trading session; any order entered "
+            f"now fills at the next business day's SAME DAY closing price, "
+            f"{next_session.isoformat()}. On a trading day, an order entered "
+            f"9:30a-4:00p ET fills at that SAME DAY's close; after 4:00p ET, "
+            f"at the next business day's close. Limit orders do not rest: "
+            f"DECA SMG will not hold a limit order past the initial attempt "
+            f"to price the transaction."
+        )
