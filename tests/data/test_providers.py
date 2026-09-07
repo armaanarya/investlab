@@ -51,12 +51,12 @@ def frame_for(tickers: list[str], rows: dict[str, list[dict]]) -> pd.DataFrame:
     return df
 
 
-def one_row(session, o, h, l, c, ac, v):
+def one_row(session, o, h, lo, c, ac, v):
     return {
         "session": session,
         "open": o,
         "high": h,
-        "low": l,
+        "low": lo,
         "close": c,
         "adj_close": ac,
         "volume": v,
@@ -242,7 +242,7 @@ def test_tiingo_parses_recorded_fixture():
     assert len(bars) == 3
     assert all(b.symbol == "AAPL" for b in bars)
     assert all(b.source == "tiingo" for b in bars)
-    first = sorted(bars, key=lambda b: b.session)[0]
+    first = min(bars, key=lambda b: b.session)
     assert first.session == date(2026, 8, 3)
     assert first.close == Decimal("303.420013")
     assert first.adj_close == Decimal("303.158569")

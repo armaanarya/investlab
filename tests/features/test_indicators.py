@@ -32,14 +32,14 @@ from investlab.features.indicators import (
 )
 
 
-def make_bar(symbol: str, session: date, o, h, l, c, ac=None, volume: int = 1000) -> Bar:
+def make_bar(symbol: str, session: date, o, h, lo, c, ac=None, volume: int = 1000) -> Bar:
     ac = c if ac is None else ac
     return Bar(
         symbol=symbol,
         session=session,
         open=Decimal(str(o)),
         high=Decimal(str(h)),
-        low=Decimal(str(l)),
+        low=Decimal(str(lo)),
         close=Decimal(str(c)),
         adj_close=Decimal(str(ac)),
         volume=volume,
