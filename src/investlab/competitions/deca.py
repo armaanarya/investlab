@@ -187,6 +187,52 @@ def _pct(fraction: Decimal) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Task 4: diversification classes
+# ---------------------------------------------------------------------------
+
+
+class AssetBucket(str, Enum):
+    """The three classes DECA's diversification rule counts. An ETF
+    (including a bond ETF) is a STOCK; a bond mutual fund is a MUTUAL_FUND.
+    See `docs/rules/deca-verified.md`."""
+
+    STOCKS = "stocks"
+    MUTUAL_FUNDS = "mutual_funds"
+    BONDS = "bonds"
+
+
+_ASSET_CLASS_TO_BUCKET: dict[AssetClass, AssetBucket] = {
+    AssetClass.STOCK: AssetBucket.STOCKS,
+    AssetClass.ETF: AssetBucket.STOCKS,
+    AssetClass.MUTUAL_FUND: AssetBucket.MUTUAL_FUNDS,
+    AssetClass.BOND: AssetBucket.BONDS,
+    # AssetClass.CASH is intentionally absent -> maps to None.
+}
+
+
+def bucket_for(asset_class: AssetClass) -> AssetBucket | None:
+    """Map a contract-level `AssetClass` to the diversification bucket it
+    counts toward. Cash counts toward none of the three."""
+    return _ASSET_CLASS_TO_BUCKET.get(asset_class)
+
+
+@dataclass(frozen=True, slots=True)
+class ClassifiedFill:
+    """A `Fill` paired with the asset class it was classified under at the
+    time of the trade, used to reconstruct which bucket a SELL emptied."""
+
+    fill: Fill
+    asset_class: AssetClass
+
+
+_BUCKET_LABEL = {
+    AssetBucket.STOCKS: "the stocks class",
+    AssetBucket.MUTUAL_FUNDS: "the mutual funds class",
+    AssetBucket.BONDS: "the bonds class",
+}
+
+
+# ---------------------------------------------------------------------------
 # Task 2: DecaProfile and eligibility
 # ---------------------------------------------------------------------------
 
@@ -368,3 +414,110 @@ class DecaProfile:
         """Sells and covers may be fewer than the 10-share buy minimum; no
         floor is verified for them."""
         return True, ""
+
+    # -----------------------------------------------------------------
+    # Task 4: the diversification engine
+    # -----------------------------------------------------------------
+
+    def class_net_cost(self, account: AccountState, bucket: AssetBucket) -> Decimal:
+        """Total net cost (purchase price x quantity, excluding commission)
+        held in `bucket`. Only LONG positions count -- a short position
+        (negative quantity) contributes nothing, which is how "only long
+        stock positions count toward the stock bucket" is enforced."""
+        total = Decimal("0")
+        for position in account.positions:
+            if bucket_for(position.asset_class) != bucket:
+                continue
+            if position.quantity <= 0:
+                continue
+            total += position.net_cost
+        return total
+
+    def _latest_sell_session(
+        self, bucket: AssetBucket, sell_history: tuple[ClassifiedFill, ...]
+    ) -> date | None:
+        sessions = [
+            cf.fill.session
+            for cf in sell_history
+            if cf.fill.action == Action.SELL and bucket_for(cf.asset_class) == bucket
+        ]
+        return max(sessions) if sessions else None
+
+    def _bucket_check(
+        self,
+        account: AccountState,
+        bucket: AssetBucket,
+        sell_history: tuple[ClassifiedFill, ...],
+    ) -> RuleCheck:
+        name = f"diversification_{bucket.value}"
+        net_cost = self.class_net_cost(account, bucket)
+        label = _BUCKET_LABEL[bucket]
+
+        if net_cost >= DIVERSIFICATION_MINIMUM:
+            detail = (
+                f"{label} holds {_money(net_cost)} net cost, at or above the "
+                f"{_money(DIVERSIFICATION_MINIMUM)} minimum; requirement "
+                f"satisfied. A later market-value decline requires no action. "
+                f"Hold through {DIVERSIFICATION_HOLD_THROUGH.isoformat()}."
+            )
+            return RuleCheck(
+                name=name,
+                status=RuleStatus.VERIFIED,
+                satisfied=True,
+                detail=detail,
+                deadline=DIVERSIFICATION_HOLD_THROUGH,
+            )
+
+        latest_sell = self._latest_sell_session(bucket, sell_history)
+        if latest_sell is not None:
+            deadline = max(DIVERSIFICATION_DEADLINE, next_business_day(latest_sell))
+            clock_note = (
+                f" A sale in {label} on {latest_sell.isoformat()} starts a one "
+                f"business day clock to restore the minimum, due "
+                f"{deadline.isoformat()} ({deadline.strftime('%A')})."
+            )
+        else:
+            deadline = DIVERSIFICATION_DEADLINE
+            clock_note = ""
+
+        shortfall = DIVERSIFICATION_MINIMUM - net_cost
+        detail = (
+            f"{label} holds {_money(net_cost)} net cost, {_money(shortfall)} "
+            f"short of the {_money(DIVERSIFICATION_MINIMUM)} minimum. Budget "
+            f"{_money(REQUIRED_GROSS_OUTLAY)} gross to absorb the "
+            f"{_money(COMMISSION_PER_TRADE)} commission. Due by "
+            f"{deadline.isoformat()} ({deadline.strftime('%A')})."
+        ) + clock_note
+
+        return RuleCheck(
+            name=name, status=RuleStatus.VERIFIED, satisfied=False, detail=detail, deadline=deadline
+        )
+
+    def diversification_checks(
+        self,
+        account: AccountState,
+        today: date,
+        sell_history: tuple[ClassifiedFill, ...] = (),
+    ) -> list[RuleCheck]:
+        """One `RuleCheck` per asset bucket: `diversification_stocks`,
+        `diversification_mutual_funds`, `diversification_bonds`. `today` is
+        accepted for interface symmetry with `check_rules`; the deadline
+        arithmetic depends only on `sell_history` and today's account
+        holdings, not on `today` itself."""
+        del today  # not needed by the per-bucket calculation itself
+        return [
+            self._bucket_check(account, bucket, sell_history)
+            for bucket in (AssetBucket.STOCKS, AssetBucket.MUTUAL_FUNDS, AssetBucket.BONDS)
+        ]
+
+    def check_rules(
+        self,
+        account: AccountState,
+        today: date,
+        sell_history: tuple[ClassifiedFill, ...] = (),
+    ) -> list[RuleCheck]:
+        """Every DECA rule evaluated against the current portfolio. `today`
+        and `sell_history` are extra optional parameters beyond the
+        `CompetitionProfile` protocol's `check_rules(account, today)` --
+        see the contract-defect note in the implementation report."""
+        return self.diversification_checks(account, today, sell_history)
