@@ -5,6 +5,7 @@ import pytest
 
 from investlab.contracts import Action, AssetClass, Fill
 from investlab.portfolio.ledger import (
+    DuplicateDividendError,
     InsufficientCashError,
     InsufficientSharesError,
     Ledger,
@@ -85,3 +86,64 @@ def test_plan_verbs_are_not_transactions():
     led = Ledger(D("100000.00"))
     with pytest.raises(ValueError):
         led.apply_fill(Fill("AAA", Action.HOLD, 1, D("1.00"), D("0"), D("0"), date(2026, 9, 8)))
+
+
+def test_split_preserves_total_basis_and_scales_quantity():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy(qty=100, price="50.00", commission="0"))
+    before = led.positions[0].net_cost
+    led.apply_split("AAA", D("2"), date(2026, 10, 1))
+    pos = led.positions[0]
+    assert pos.quantity == 200
+    assert pos.net_cost == before == D("5000.00")
+    assert pos.lots[0].price == D("25.00000000")
+
+
+def test_reverse_split_scales_the_other_way():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy(qty=100, price="5.00", commission="0"))
+    led.apply_split("AAA", D("0.1"), date(2026, 10, 1))
+    pos = led.positions[0]
+    assert pos.quantity == 10
+    assert pos.net_cost == D("500.00")
+
+
+def test_split_fraction_becomes_cash_in_lieu_at_basis_not_pnl():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy(qty=5, price="30.00", commission="0"))
+    cash_before, basis_before = led.cash, led.positions[0].net_cost
+    record = led.apply_split("AAA", D("1.5"), date(2026, 10, 1))   # 7.5 -> 7 shares
+    pos = led.positions[0]
+    assert pos.quantity == 7
+    assert record.cash_in_lieu > D("0")
+    assert led.cash == cash_before + record.cash_in_lieu
+    assert pos.net_cost + record.cash_in_lieu == basis_before
+    assert led.realized_pnl == D("0")
+
+
+def test_dividend_is_a_receivable_on_ex_date_and_cash_on_pay_date():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy(qty=100, price="50.00", commission="0"))
+    led.apply_dividend("AAA", D("0.25"), date(2026, 10, 1), date(2026, 10, 15))
+    assert led.receivables == D("25.00")
+    equity_at_ex = led.snapshot({"AAA": D("50.00")}, date(2026, 10, 1)).equity
+
+    assert led.settle_dividends(date(2026, 10, 10)) == ()      # before pay date
+    assert led.receivables == D("25.00")
+
+    paid = led.settle_dividends(date(2026, 10, 15))
+    assert len(paid) == 1
+    assert led.receivables == D("0.00")
+    assert led.cash == D("95025.00")
+    assert led.snapshot({"AAA": D("50.00")}, date(2026, 10, 15)).equity == equity_at_ex
+
+
+def test_dividend_cannot_be_credited_twice():
+    led = Ledger(D("100000.00"))
+    led.apply_fill(buy(qty=100, price="50.00", commission="0"))
+    led.apply_dividend("AAA", D("0.25"), date(2026, 10, 1), date(2026, 10, 15))
+    with pytest.raises(DuplicateDividendError):
+        led.apply_dividend("AAA", D("0.25"), date(2026, 10, 1), date(2026, 10, 15))
+    led.settle_dividends(date(2026, 10, 15))
+    led.settle_dividends(date(2026, 10, 16))
+    assert led.cash == D("95025.00")

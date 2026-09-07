@@ -9,14 +9,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Mapping, Sequence
 
 from investlab.contracts import Action, AssetClass, AccountState, Fill, Lot, Position
-from investlab.money import ZERO, usd
+from investlab.money import ZERO, round_shares, usd
 
 _SELL_ACTIONS = frozenset({Action.SELL, Action.REDUCE, Action.EXIT})
 _BUY_ACTIONS = frozenset({Action.BUY})
+
+# Sub-cent precision for split-adjusted per-share basis: a cent would lose
+# value on, say, a 3-for-1 split. Documented here rather than in money.py
+# because it is specific to lot-basis rescaling, not general money math.
+_EIGHT_DP = Decimal("0.00000001")
 
 
 class LedgerError(Exception):
@@ -52,6 +57,31 @@ class RealizedTrade:
     realized_pnl: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class SplitRecord:
+    """One split event. `cash_in_lieu` is the value of fractional shares
+    that could not be issued, moved to cash so no value is lost or created."""
+
+    symbol: str
+    ratio: Decimal
+    effective: date
+    cash_in_lieu: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class DividendAccrual:
+    """A dividend recognized as a receivable on the ex-date and converted
+    to cash on the pay date. `paid` is False until `settle_dividends` runs."""
+
+    symbol: str
+    per_share: Decimal
+    ex_date: date
+    pay_date: date
+    shares: int
+    amount: Decimal
+    paid: bool = False
+
+
 class Ledger:
     """Cash, lots, receivables, liabilities, and fill history for one account."""
 
@@ -64,6 +94,8 @@ class Ledger:
         self._realized: list[RealizedTrade] = []
         self._receivables: Decimal = ZERO
         self._liabilities: Decimal = ZERO
+        self._dividends: list[DividendAccrual] = []
+        self._dividend_keys: set[tuple[str, date, date]] = set()
 
     # -- read-only views ---------------------------------------------------
 
@@ -98,6 +130,10 @@ class Ledger:
     @property
     def realized_pnl(self) -> Decimal:
         return sum((t.realized_pnl for t in self._realized), ZERO)
+
+    @property
+    def dividends(self) -> tuple[DividendAccrual, ...]:
+        return tuple(self._dividends)
 
     # -- fills ---------------------------------------------------------------
 
@@ -239,3 +275,82 @@ class Ledger:
             receivables=self._receivables,
             liabilities=self._liabilities,
         )
+
+    # -- splits ---------------------------------------------------------------
+
+    def apply_split(self, symbol: str, ratio: Decimal, effective: date) -> SplitRecord:
+        if ratio <= 0:
+            raise ValueError(f"split ratio must be positive, got {ratio}")
+        lots = self._lots.get(symbol)
+        if not lots:
+            raise UnknownSymbolError(f"cannot split {symbol}: no position held")
+
+        new_lots: list[Lot] = []
+        total_cash_in_lieu = ZERO
+        for lot in lots:
+            scaled_qty = Decimal(lot.quantity) * ratio
+            new_qty = round_shares(scaled_qty)
+            # Per-share basis scales inversely with the split ratio, so
+            # quantity * price (economic value) is preserved before rounding.
+            new_price = (lot.price / ratio).quantize(_EIGHT_DP, rounding=ROUND_HALF_UP)
+            fractional_shares = scaled_qty - Decimal(new_qty)
+            cash_in_lieu_lot = usd(fractional_shares * new_price)
+            total_cash_in_lieu += cash_in_lieu_lot
+            if new_qty > 0:
+                new_lots.append(Lot(symbol, new_qty, new_price, lot.commission, lot.opened))
+
+        self._lots[symbol] = new_lots
+        self._cash += total_cash_in_lieu
+        return SplitRecord(
+            symbol=symbol, ratio=ratio, effective=effective, cash_in_lieu=total_cash_in_lieu
+        )
+
+    # -- dividends --------------------------------------------------------------
+
+    def apply_dividend(
+        self, symbol: str, per_share: Decimal, ex_date: date, pay_date: date
+    ) -> DividendAccrual:
+        key = (symbol, ex_date, pay_date)
+        if key in self._dividend_keys:
+            raise DuplicateDividendError(
+                f"dividend for {symbol} ex {ex_date} pay {pay_date} already recognized"
+            )
+        lots = self._lots.get(symbol)
+        if not lots:
+            raise UnknownSymbolError(f"cannot accrue a dividend for {symbol}: no position held")
+
+        shares_held = sum(lot.quantity for lot in lots)
+        amount = usd(per_share * Decimal(shares_held))
+        self._receivables += amount
+        self._dividend_keys.add(key)
+        accrual = DividendAccrual(
+            symbol=symbol,
+            per_share=per_share,
+            ex_date=ex_date,
+            pay_date=pay_date,
+            shares=shares_held,
+            amount=amount,
+            paid=False,
+        )
+        self._dividends.append(accrual)
+        return accrual
+
+    def settle_dividends(self, as_of: date) -> tuple[DividendAccrual, ...]:
+        settled: list[DividendAccrual] = []
+        for i, accrual in enumerate(self._dividends):
+            if accrual.paid or accrual.pay_date > as_of:
+                continue
+            paid_accrual = DividendAccrual(
+                symbol=accrual.symbol,
+                per_share=accrual.per_share,
+                ex_date=accrual.ex_date,
+                pay_date=accrual.pay_date,
+                shares=accrual.shares,
+                amount=accrual.amount,
+                paid=True,
+            )
+            self._dividends[i] = paid_accrual
+            self._receivables -= accrual.amount
+            self._cash += accrual.amount
+            settled.append(paid_accrual)
+        return tuple(settled)
