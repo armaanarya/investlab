@@ -86,7 +86,9 @@ price index.
 
 ### 4. Statement reconciliation import
 
-`Ledger.reconcile` exists and is tested. What is missing is the front end.
+`investlab fill` now closes the loop for one trade at a time, and
+`Ledger.reconcile` exists and is tested. What is missing is bulk import, which
+is what catches a trade you forgot to record or a fee you did not expect.
 
 - **BLOCKED**: needs someone to check whether the SMG holdings page exports CSV
 - If it does: a file importer
