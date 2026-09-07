@@ -26,10 +26,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from investlab.contracts import (
+    AccountState,
     Bar,
     BlockedOrder,
     BlockReason,
     Instrument,
+    SizingConstraints,
 )
 
 # ---------------------------------------------------------------------------
@@ -172,6 +174,12 @@ def _normalize_exchange(exchange: str) -> str:
     return "".join(ch for ch in exchange.upper() if ch.isalnum())
 
 
+def _pct(fraction: Decimal) -> str:
+    """Format a fraction as a one-decimal percentage, e.g. Decimal("0.31")
+    -> "31.0%"."""
+    return f"{(fraction * Decimal(100)).quantize(Decimal('0.1'))}%"
+
+
 # ---------------------------------------------------------------------------
 # Task 2: DecaProfile and eligibility
 # ---------------------------------------------------------------------------
@@ -282,3 +290,75 @@ class DecaProfile:
             return None
         assert block_reason is not None  # every False branch sets one
         return BlockedOrder(symbol=instrument.symbol, reason=block_reason, detail=reason)
+
+    # -----------------------------------------------------------------
+    # Task 3: sizing constraints and the position ceiling
+    # -----------------------------------------------------------------
+
+    def sizing_constraints(self, account: AccountState) -> SizingConstraints:
+        """Everything the integer share solver (owned by CORE) needs to size
+        an order under DECA's rules."""
+        return SizingConstraints(
+            equity=account.equity,
+            spendable_cash=self.spendable_cash(account),
+            risk_fraction=self.risk_fraction,
+            position_ceiling_fraction=POSITION_CEILING_FRACTION,
+            min_shares=MIN_SHARES_PER_BUY,
+            min_price=MIN_SHARE_PRICE,
+            commission_per_trade=self.commission_per_trade,
+            sell_fee_rate=self.sec_fee_rate,
+        )
+
+    def spendable_cash(self, account: AccountState) -> Decimal:
+        """Cash available to spend on new buys. Without margin, only
+        positive cash counts. With margin, buying power extends to half of
+        total equity minus whatever is already borrowed (negative cash)."""
+        if not self.allows_margin:
+            return max(account.cash, Decimal("0"))
+        borrowed = max(-account.cash, Decimal("0"))
+        headroom = account.equity * MARGIN_MAX_EQUITY_FRACTION - borrowed
+        return max(account.cash + headroom, Decimal("0"))
+
+    def position_weight(self, account: AccountState, symbol: str) -> Decimal:
+        """`symbol`'s marked value as a fraction of total equity. Zero when
+        the account holds no position in `symbol` or equity is zero."""
+        equity = account.equity
+        if equity == 0:
+            return Decimal("0")
+        position = next((p for p in account.positions if p.symbol == symbol), None)
+        if position is None:
+            return Decimal("0")
+        mark = account.marks.get(symbol)
+        if mark is None:
+            return Decimal("0")
+        return (mark * Decimal(position.quantity)) / equity
+
+    def can_add_to(self, account: AccountState, symbol: str) -> tuple[bool, str]:
+        """Whether a BUY may add to an existing position in `symbol`. At or
+        above the 30% ceiling, buys are blocked -- the position is held, not
+        force-sold; this method never recommends a sale."""
+        weight = self.position_weight(account, symbol)
+        if weight >= POSITION_CEILING_FRACTION:
+            reason = (
+                f"{symbol} is {_pct(weight)} of equity, at or above the "
+                f"{_pct(POSITION_CEILING_FRACTION)} position ceiling; no "
+                f"further buys are allowed. The existing position is held, "
+                f"not sold."
+            )
+            return False, reason
+        return True, ""
+
+    def check_buy_quantity(self, quantity: int) -> tuple[bool, str]:
+        """DECA requires a minimum 10-share lot on buys."""
+        if quantity < MIN_SHARES_PER_BUY:
+            reason = (
+                f"buy quantity {quantity} is below the "
+                f"{MIN_SHARES_PER_BUY}-share minimum required on buys."
+            )
+            return False, reason
+        return True, ""
+
+    def check_sell_quantity(self, quantity: int) -> tuple[bool, str]:
+        """Sells and covers may be fewer than the 10-share buy minimum; no
+        floor is verified for them."""
+        return True, ""

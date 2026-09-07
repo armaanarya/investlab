@@ -16,13 +16,39 @@ from decimal import Decimal
 import pytest
 
 from investlab.competitions import deca
-from investlab.contracts import AssetClass, Bar, BlockReason, Instrument
+from investlab.contracts import AccountState, AssetClass, Bar, BlockReason, Instrument, Lot, Position
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
 PROFILE = deca.DecaProfile()
+
+
+def make_account(cash="100000", positions=(), marks=None, as_of=date(2026, 9, 8)):
+    return AccountState(
+        as_of=as_of,
+        cash=Decimal(cash),
+        positions=tuple(positions),
+        marks={symbol: Decimal(value) for symbol, value in (marks or {}).items()},
+    )
+
+
+def account_with_one_position_at(value: Decimal, cash: Decimal, symbol="AAA", as_of=date(2026, 9, 8)):
+    """An account whose one 100-share position is marked to exactly `value`,
+    so position_weight comes out to a clean fraction of equity."""
+    per_share = (value / Decimal(100)).quantize(Decimal("0.01"))
+    lot = Lot(symbol, 100, per_share, Decimal("5"), as_of)
+    position = Position(symbol, AssetClass.STOCK, (lot,))
+    return make_account(cash=str(cash), positions=(position,), marks={symbol: per_share}, as_of=as_of)
+
+
+pos_aaa_80k = Position(
+    "AAA", AssetClass.STOCK, (Lot("AAA", 100, Decimal("800.00"), Decimal("5"), date(2026, 9, 8)),)
+)
+pos_aaa_90k = Position(
+    "AAA", AssetClass.STOCK, (Lot("AAA", 100, Decimal("900.00"), Decimal("5"), date(2026, 9, 8)),)
+)
 
 
 def make_instrument(
@@ -209,3 +235,59 @@ def test_prohibition_outranks_every_other_check():
     )
     _, reason = PROFILE.is_eligible(bad, make_bar(symbol="IBIT", close="1.00"))
     assert "bitcoin" in reason.lower()
+
+
+# ---------------------------------------------------------------------------
+# Task 3: sizing constraints and the position ceiling
+# ---------------------------------------------------------------------------
+
+
+def test_sizing_constraints_carry_verified_values():
+    acct = make_account(cash="100000")
+    c = PROFILE.sizing_constraints(acct)
+    assert c.equity == Decimal("100000")
+    assert c.min_shares == 10
+    assert c.min_price == Decimal("3.00")
+    assert c.position_ceiling_fraction == Decimal("0.30")
+    assert c.commission_per_trade == Decimal("5")
+    assert c.sell_fee_rate == Decimal("0.0000278")
+
+
+def test_nine_share_buy_rejected_ten_accepted():
+    ok, reason = PROFILE.check_buy_quantity(9)
+    assert ok is False
+    assert "10" in reason
+    assert "9" in reason
+    assert PROFILE.check_buy_quantity(10) == (True, "")
+
+
+def test_sells_may_be_fewer_than_ten_shares():
+    assert PROFILE.check_sell_quantity(3) == (True, "")
+
+
+def test_spendable_cash_excludes_margin_by_default():
+    acct = make_account(cash="20000", positions=(pos_aaa_80k,), marks={"AAA": "800.00"})
+    assert PROFILE.spendable_cash(acct) == Decimal("20000")
+
+
+def test_spendable_cash_with_margin_enabled_adds_half_of_equity():
+    profile = deca.DecaProfile(allows_margin=True)
+    acct = make_account(cash="10000", positions=(pos_aaa_90k,), marks={"AAA": "900.00"})
+    assert acct.equity == Decimal("100000")
+    assert profile.spendable_cash(acct) == Decimal("60000")
+
+
+def test_position_at_31_percent_blocks_add_but_is_not_force_sold():
+    acct = account_with_one_position_at(Decimal("31000"), cash=Decimal("69000"))
+    assert acct.equity == Decimal("100000")
+    assert PROFILE.position_weight(acct, "AAA") == Decimal("0.31")
+    ok, reason = PROFILE.can_add_to(acct, "AAA")
+    assert ok is False
+    assert "31.0" in reason
+    assert "30.0" in reason
+    assert "sell" not in reason.lower()
+
+
+def test_position_at_29_percent_allows_add():
+    acct = account_with_one_position_at(Decimal("29000"), cash=Decimal("71000"))
+    assert PROFILE.can_add_to(acct, "AAA") == (True, "")
