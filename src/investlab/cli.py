@@ -28,6 +28,7 @@ from investlab import config as cfg_mod
 from investlab.contracts import AccountState, AssetClass, Lot, Position, RuleStatus
 from investlab.data.cache import ParquetCache, SymbolNotCachedError
 from investlab.data.universe import BIAS_WARNING, default_universe
+from investlab.store import LedgerStore
 
 app = typer.Typer(
     add_completion=False,
@@ -65,8 +66,18 @@ def now_et() -> datetime:
     return datetime.now(EASTERN)
 
 
+def _store(profile: str) -> LedgerStore:
+    """The per-competition ledger, tracked in git under `ledger/<profile>/`.
+
+    DECA and Wharton are kept strictly apart: different capital, different
+    rules, different asset-class definitions. A combined book would let a
+    Wharton holding appear to satisfy a DECA requirement.
+    """
+    return LedgerStore(profile)
+
+
 def _portfolio_path(profile: str) -> Path:
-    return cfg_mod.DEFAULT_RUNS_DIR / f"portfolio_{profile}.json"
+    return _store(profile).portfolio_path
 
 
 def _build_provider_chain(cfg: cfg_mod.AppConfig) -> Any:
@@ -534,23 +545,13 @@ def portfolio_init(
         raise typer.Exit(EXIT_OK)
 
     starting = cfg.deca.starting_cash if profile == "deca" else cfg.wharton.starting_cash
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "profile": profile,
-                "as_of": today_et().isoformat(),
-                "cash": str(starting),
-                "positions": [],
-                "_note": (
-                    "Mirror of your real competition account. After every trade, add "
-                    "or amend a lot here so the tool's numbers match the platform's."
-                ),
-            },
-            indent=2,
-        )
-    )
-    console.print(f"[green]Created[/green] {path} with ${starting:,} cash.")
+    store = _store(profile)
+    store.init(starting, today_et())
+    store.render_summary(store.account(), generated=now_et().isoformat(timespec="seconds"))
+    console.print(f"[green]Created[/green] {store.dir} with ${starting:,} cash.")
+    console.print(f"  {store.portfolio_path.name}  machine state")
+    console.print(f"  {store.trades_path.name}     append-only trade log")
+    console.print(f"  {store.summary_path.name}      readable summary, regenerated on write")
 
 
 @app.command()
@@ -669,7 +670,31 @@ def fill(
         if sym in by_symbol and not by_symbol[sym]["lots"]:
             del by_symbol[sym]
     raw["positions"] = list(by_symbol.values())
-    path.write_text(json.dumps(raw, indent=2))
+    store = _store(profile)
+    store.save_book(raw)
+
+    # Append to the tracked trade log, then regenerate the readable summary so
+    # LEDGER.md is never stale relative to portfolio.json.
+    from investlab.store import TradeRecord
+
+    store.append_trade(
+        TradeRecord(
+            session=session,
+            recorded_at=now_et().isoformat(timespec="seconds"),
+            symbol=sym,
+            action=act.value,
+            quantity=quantity,
+            price=px,
+            commission=comm,
+            fees=Decimal("0"),
+            asset_class=klass.value,
+            cash_after=after_cash,
+        )
+    )
+    store.render_summary(
+        _load_account(profile, cache, cfg),
+        generated=now_et().isoformat(timespec="seconds"),
+    )
 
     console.print(
         f"[green]Recorded[/green] {act.value} {quantity:,} {sym} @ ${Decimal(price):,.2f} "
@@ -764,18 +789,20 @@ def journal_add(
         data_source=f"investlab cache ({', '.join(cfg.data.providers)})",
         note_fields={"profile": profile},
     )
-    journal = Journal(cfg.journal_path)
+    journal = Journal(_store(profile).journal_path)
     entry = journal.record(facts, reasoning)
-    console.print(f"[green]Recorded[/green] {entry.entry_id} to {cfg.journal_path}")
+    console.print(f"[green]Recorded[/green] {entry.entry_id} to {_store(profile).journal_path}")
 
 
 @journal_app.command("list")
-def journal_list(limit: int = typer.Option(15)) -> None:
+def journal_list(
+    limit: int = typer.Option(15),
+    profile: str = typer.Option("deca", help="deca or wharton"),
+) -> None:
     """Show recent entries and verify the log has not been tampered with."""
     from investlab.journal import Journal
 
-    cfg = cfg_mod.load()
-    journal = Journal(cfg.journal_path)
+    journal = Journal(_store(profile).journal_path)
     entries = journal.entries()
     if not entries:
         console.print(
@@ -804,13 +831,16 @@ def journal_list(limit: int = typer.Option(15)) -> None:
 
 @journal_app.command("export")
 def journal_export(
-    out: Path = typer.Option(Path("runs/evidence_packet.md"), help="Where to write."),
+    out: Path = typer.Option(Path(""), help="Where to write. Defaults inside the ledger."),
+    profile: str = typer.Option("deca", help="deca or wharton"),
 ) -> None:
     """Export an evidence packet: your entries plus a citable provenance footer."""
     from investlab.journal import Journal, export_evidence_packet
 
     cfg = cfg_mod.load()
-    journal = Journal(cfg.journal_path)
+    store = _store(profile)
+    out = out if str(out) else store.dir / "evidence_packet.md"
+    journal = Journal(store.journal_path)
     entries = journal.entries()
     if not entries:
         console.print("Nothing to export yet.")
@@ -826,6 +856,72 @@ def journal_export(
         "[dim]The reasoning in this packet is yours. Cite the tool in APA only for "
         "the figures it computed, never for the analysis.[/dim]"
     )
+
+
+@app.command()
+def ledger(
+    profile: str = typer.Option("deca", help="deca or wharton"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Regenerate LEDGER.md from current marks."
+    ),
+) -> None:
+    """Show one competition's ledger, or regenerate its written summary."""
+    cfg = cfg_mod.load()
+    cache = ParquetCache(cfg.data.cache_dir)
+    store = _store(profile)
+    if not store.exists():
+        console.print(
+            f"No ledger for {profile}. Run [cyan]investlab portfolio init "
+            f"--profile {profile}[/cyan]."
+        )
+        raise typer.Exit(EXIT_BAD_CONFIG)
+
+    account = _load_account(profile, cache, cfg)
+    if refresh:
+        prof = _load_profile(profile, cfg)
+        rule_lines = [
+            f"{c.name}: {'ok' if c.satisfied else 'NOT MET'} — {c.detail}"
+            for c in prof.check_rules(account, today_et())
+        ]
+        store.render_summary(
+            account, rule_lines=rule_lines, generated=now_et().isoformat(timespec="seconds")
+        )
+        console.print(f"[green]Regenerated[/green] {store.summary_path}")
+
+    book = store.load_book()
+    starting = Decimal(str(book.get("starting_cash", account.cash)))
+    pnl = account.equity - starting
+    pct = (pnl / starting * Decimal(100)) if starting else Decimal(0)
+    console.print(
+        Panel(
+            f"[bold]{profile.upper()}[/bold]  ·  as of {account.as_of}\n"
+            f"Cash ${account.cash:,.2f}  ·  Equity ${account.equity:,.2f}  ·  "
+            f"Started ${starting:,.2f}\n"
+            f"P&L ${pnl:,.2f} ({pct:+.2f}%)  ·  {len(store.trades())} trades recorded",
+            border_style="cyan",
+        )
+    )
+
+    if account.positions:
+        t = Table(header_style="bold")
+        t.add_column("Symbol")
+        t.add_column("Class")
+        t.add_column("Shares", justify="right")
+        t.add_column("Net cost", justify="right")
+        t.add_column("Value", justify="right")
+        for pos in sorted(account.positions, key=lambda p: p.symbol):
+            mark = account.marks.get(pos.symbol, Decimal("0"))
+            t.add_row(
+                pos.symbol,
+                pos.asset_class.value,
+                f"{pos.quantity:,}",
+                f"${pos.net_cost:,.2f}",
+                f"${mark * Decimal(pos.quantity):,.2f}",
+            )
+        console.print(t)
+    else:
+        console.print("No open positions.")
+    console.print(f"[dim]{store.dir}[/dim]")
 
 
 @app.command()

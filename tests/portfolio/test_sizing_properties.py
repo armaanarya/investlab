@@ -61,7 +61,14 @@ def test_the_solver_is_maximal_one_more_share_would_breach(scenario):
     assert breaches
 
 
-@settings(max_examples=200)
+# No deadline: this asserts a correctness invariant, not a latency budget.
+# Hypothesis generates pathological inputs such as a one-cent stop distance
+# ($244.00 entry against a $243.99 stop), which makes risk-per-share tiny and
+# sends the integer solver down its bounded-enumeration path for thousands of
+# candidate quantities. Measured worst case is ~250ms for six candidates. Real
+# stops are 2x ATR, i.e. dollars wide, and the daily loop sizes at most eight
+# names once a day, so this is not a latency the tool ever meets in use.
+@settings(max_examples=200, deadline=None)
 @given(scenarios(), st.integers(min_value=2, max_value=6))
 def test_a_batch_never_spends_more_than_available_cash(scenario, n):
     price, stop, con = scenario

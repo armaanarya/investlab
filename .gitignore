@@ -10,5 +10,7 @@ build/
 .superpowers/
 data_cache/
 runs/
+!ledger/
 .env
 .DS_Store
+.hypothesis/

@@ -6,6 +6,7 @@ old cash, so it re-proposed buys that had already been made.
 """
 
 import json
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -17,13 +18,14 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def book(tmp_path, monkeypatch):
-    path = tmp_path / "portfolio_deca.json"
-    path.write_text(
-        json.dumps({"profile": "deca", "as_of": "2026-09-08", "cash": "100000.00", "positions": []})
-    )
-    monkeypatch.setattr("investlab.cli._portfolio_path", lambda profile: path)
-    return path
+def book(tmp_path):
+    """A throwaway DECA ledger. The autouse guard in conftest already points
+    the store at a temp root; this just initialises it."""
+    from investlab.store import LedgerStore
+
+    store = LedgerStore("deca")
+    store.init(Decimal("100000.00"), date(2026, 9, 8))
+    return store.portfolio_path
 
 
 def _run(*args):
