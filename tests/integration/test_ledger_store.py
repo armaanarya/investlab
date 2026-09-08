@@ -106,7 +106,7 @@ def test_summary_is_regenerated_not_appended(root):
     first = store.render_summary(store.account())
     second = store.render_summary(store.account())
     assert first == second
-    assert store.summary_path.read_text().count("# DECA Stock Market Game ledger") == 1
+    assert store.summary_path.read_text().count("# DECA Stock Market Game") == 1
 
 
 def test_account_round_trips_through_the_book(root):
@@ -129,3 +129,93 @@ def test_account_round_trips_through_the_book(root):
     assert account.cash == Decimal("96995.00")
     assert account.positions[0].quantity == 30
     assert account.equity == Decimal("96995.00") + Decimal("3300")
+
+
+def test_round_trips_match_fifo_and_net_both_commissions(root):
+    """A sell matched against an earlier buy must report realised P&L net of
+    the fee on both legs. Gross P&L flatters a $5-a-trade game."""
+    from investlab.performance import round_trips_from_trades
+
+    rows = [
+        {
+            "session": "2026-09-08",
+            "symbol": "AAPL",
+            "action": "buy",
+            "quantity": "10",
+            "price": "100",
+            "commission": "5",
+        },
+        {
+            "session": "2026-09-18",
+            "symbol": "AAPL",
+            "action": "sell",
+            "quantity": "10",
+            "price": "120",
+            "commission": "5",
+        },
+    ]
+    trips, commissions = round_trips_from_trades(rows)
+    assert len(trips) == 1
+    trip = trips[0]
+    assert trip.cost == Decimal("1000")
+    assert trip.proceeds == Decimal("1200")
+    assert trip.realized == Decimal("190.00")  # 200 gross, minus $5 + $5
+    assert trip.days_held == 10
+    assert commissions == Decimal("10.00")
+
+
+def test_a_partial_sell_closes_only_what_was_sold(root):
+    from investlab.performance import round_trips_from_trades
+
+    rows = [
+        {
+            "session": "2026-09-08",
+            "symbol": "AAPL",
+            "action": "buy",
+            "quantity": "10",
+            "price": "100",
+            "commission": "5",
+        },
+        {
+            "session": "2026-09-18",
+            "symbol": "AAPL",
+            "action": "sell",
+            "quantity": "4",
+            "price": "110",
+            "commission": "5",
+        },
+    ]
+    trips, _ = round_trips_from_trades(rows)
+    assert len(trips) == 1
+    assert trips[0].quantity == 4
+
+
+def test_win_rate_is_none_rather_than_zero_when_nothing_has_closed(root):
+    """Reporting 0% would read as 'everything lost' rather than 'nothing has
+    been sold', which is a materially different claim in a graded report."""
+    store = LedgerStore("deca", root)
+    store.init(Decimal("100000"), date(2026, 9, 8))
+    assert store.performance(store.account()).win_rate_pct is None
+
+
+def test_equity_snapshot_replaces_rather_than_appends_same_day(root):
+    store = LedgerStore("deca", root)
+    store.init(Decimal("100000"), date(2026, 9, 8))
+    store.record_equity(date(2026, 9, 8), Decimal("100000"), Decimal("100000"), Decimal("600"))
+    store.record_equity(date(2026, 9, 8), Decimal("101000"), Decimal("50000"), Decimal("601"))
+    store.record_equity(date(2026, 9, 9), Decimal("102000"), Decimal("50000"), Decimal("605"))
+    rows = store.equity_curve_rows()
+    assert len(rows) == 2, "running twice in a day must not distort the curve"
+    assert Decimal(rows[0]["equity"]) == Decimal("101000.00")
+
+
+def test_benchmark_return_needs_two_points(root):
+    store = LedgerStore("deca", root)
+    store.init(Decimal("100000"), date(2026, 9, 8))
+    store.record_equity(date(2026, 9, 8), Decimal("100000"), Decimal("0"), Decimal("600"))
+    assert store.performance(store.account()).benchmark_return_pct is None
+
+    store.record_equity(date(2026, 9, 30), Decimal("110000"), Decimal("0"), Decimal("630"))
+    perf = store.performance(store.account())
+    assert perf.benchmark_return_pct == Decimal("5.00")  # 600 -> 630
+    assert perf.excess_return_pct == Decimal("5.00")  # 10% portfolio - 5% bench

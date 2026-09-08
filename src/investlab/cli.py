@@ -47,6 +47,11 @@ EXIT_RULE_UNRESOLVED = 4
 
 
 EASTERN = ZoneInfo("America/New_York")
+# S&P 500 trackers in preference order. Not a single ticker: yfinance returned
+# zero price rows for SPY on 2026-09-08 while resolving its metadata fine, a
+# Yahoo-side quirk that would otherwise have silently left the report with no
+# benchmark. VOO and IVV track the same index.
+BENCHMARK_CANDIDATES = ("SPY", "VOO", "IVV")
 
 
 def today_et() -> date:
@@ -248,6 +253,11 @@ def data_pull(
         if symbols
         else list(universe.symbols())
     )
+    # The benchmark is pulled but deliberately kept OUT of the universe, so the
+    # screen can never propose buying it. DECA ranks on return against S&P 500
+    # growth; holding the index is how you guarantee you match the thing you
+    # need to beat.
+    wanted += [b for b in BENCHMARK_CANDIDATES if b not in wanted]
     end = today_et()
     start = end - timedelta(days=days)
 
@@ -856,6 +866,70 @@ def journal_export(
         "[dim]The reasoning in this packet is yours. Cite the tool in APA only for "
         "the figures it computed, never for the analysis.[/dim]"
     )
+
+
+def _benchmark(cache: ParquetCache, as_of: date) -> tuple[str, Decimal] | None:
+    """The first cached S&P tracker with a usable close, and its price.
+
+    These are total-return ETFs standing in for S&P 500 growth, which is DECA's
+    official ranking measure. An ETF runs slightly ahead of a price index over
+    a long window; over twelve weeks the gap is small, and the ticker actually
+    used is named everywhere the number appears.
+    """
+    for symbol in BENCHMARK_CANDIDATES:
+        try:
+            bars = cache.read(symbol, as_of - timedelta(days=14), as_of)
+        except SymbolNotCachedError:
+            continue
+        if bars:
+            return symbol, bars[-1].close
+    return None
+
+
+@app.command()
+def snapshot(
+    profile: str = typer.Option("", help="deca, wharton, or blank for both."),
+) -> None:
+    """Record today's equity so the performance report has a curve.
+
+    One row per session; running twice in a day overwrites rather than
+    appends. Without snapshots there is no drawdown figure and no benchmark
+    comparison, which for DECA is the number that decides whether you qualify.
+    """
+    cfg = cfg_mod.load()
+    cache = ParquetCache(cfg.data.cache_dir)
+    profiles = [profile] if profile else ["deca", "wharton"]
+    found = _benchmark(cache, today_et())
+    bench_symbol, bench = found or (None, None)
+
+    for name in profiles:
+        store = _store(name)
+        if not store.exists():
+            console.print(f"[dim]{name}: no ledger yet, skipping.[/dim]")
+            continue
+        account = _load_account(name, cache, cfg)
+        store.record_equity(today_et(), account.equity, account.cash, bench)
+        prof = _load_profile(name, cfg)
+        rule_lines = [
+            f"{c.name}: {'ok' if c.satisfied else 'NOT MET'} — {c.detail}"
+            for c in prof.check_rules(account, today_et())
+        ]
+        store.render_summary(
+            account, rule_lines=rule_lines, generated=now_et().isoformat(timespec="seconds")
+        )
+        perf = store.performance(account)
+        console.print(
+            f"[green]{name}[/green] {today_et()}  equity ${account.equity:,.2f}  "
+            f"({perf.total_return_pct:+.2f}% since start)  ->  {store.summary_path.name}"
+        )
+
+    if bench is None:
+        console.print(
+            "[yellow]No S&P benchmark cached.[/yellow] Run 'investlab data pull' so the "
+            "report can show the comparison DECA actually ranks on."
+        )
+    else:
+        console.print(f"[dim]Benchmark: {bench_symbol} at ${bench:,.2f}[/dim]")
 
 
 @app.command()

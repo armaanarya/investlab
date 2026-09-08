@@ -19,13 +19,21 @@ ledger/
 | `portfolio.json` | Machine state: cash, positions, individual lots. The source of truth. | Only to correct an error |
 | `trades.csv` | Append-only log of every recorded fill, oldest first. | No |
 | `journal.jsonl` | The student's own reasoning per trade. Hash-chained, append-only. | **Never** |
-| `LEDGER.md` | Readable summary. Regenerated on every write. | **Never** — it is overwritten |
+| `LEDGER.md` | **The performance report.** Regenerated on every write. | **Never** — it is overwritten |
+| `equity.csv` | One equity + benchmark row per session. Feeds the curve. | No |
 
 ## For an agent picking this up cold
 
-Read `LEDGER.md` first. It carries current cash, equity, P&L, open positions,
-DECA asset-class totals against the $10,000 diversification minimums, and the
-full trade history in one file.
+Read `LEDGER.md` first. It is the full performance report: equity and P&L split
+into realised and unrealised, return against the S&P benchmark DECA actually
+ranks on, every open position with cost basis and unrealised return, every
+closed trade with what it was bought and sold for and what it earned, DECA
+asset-class totals against the $10,000 minimums, the equity curve, and the raw
+trade log.
+
+Returns there are **period returns, never annualised**. A twelve-week game does
+not have an annual return, and presenting one is the most common way a student
+report overstates itself.
 
 Then know these four things:
 
@@ -47,6 +55,7 @@ Then know these four things:
 ## Commands
 
 ```bash
+uv run investlab snapshot                           # record today's equity, both books
 uv run investlab ledger --profile deca              # current state
 uv run investlab ledger --profile deca --refresh    # regenerate LEDGER.md
 uv run investlab fill -s AAPL -a buy -q 30 -p 319.97 --profile deca
