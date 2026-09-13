@@ -20,20 +20,23 @@ are **not annualised**.
 | Invested at cost | $78,304.87 |
 | Commissions paid | $15.00 |
 | Trades recorded | 3 |
-| Max drawdown (recorded) | 0.00% |
+| Max drawdown (recorded) | 0.02% |
 
 ### Versus S&P 500 (SPY)
 
-Not enough history yet. The comparison needs at least two recorded
-sessions; run `investlab snapshot` on each trading day to build it.
+DECA ranks on percent return against S&P 500 growth, so this line is
+the one that decides whether you qualify.
+
+- Benchmark over the same window: **-0.22%**
+- Excess return: **+0.20%**
 
 ## Open positions
 
-| Symbol | Class | Shares | Avg cost | Mark | Cost basis | Value | Unrealised | Return | Days |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| ORCL | stock | 142 | $150.28 | $150.28 | $21,339.76 | $21,339.76 | $0.00 | +0.00% | 0 |
-| CVX | stock | 140 | $214.06 | $214.06 | $29,968.40 | $29,968.40 | $0.00 | +0.00% | 0 |
-| WFC | stock | 299 | $90.29 | $90.29 | $26,996.71 | $26,996.71 | $0.00 | +0.00% | 0 |
+| Symbol | Class | Shares | Avg cost | Mark | Cost basis | Value | Unrealised | Return | Days | Entry stop |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ORCL | stock | 142 | $150.28 | $150.28 | $21,339.76 | $21,339.76 | $0.00 | +0.00% | 0 | $147.68 |
+| CVX | stock | 140 | $214.06 | $214.06 | $29,968.40 | $29,968.40 | $0.00 | +0.00% | 0 | $205.62 |
+| WFC | stock | 299 | $90.29 | $90.29 | $26,996.71 | $26,996.71 | $0.00 | +0.00% | 0 | $85.95 |
 
 ## Closed trades
 
@@ -55,19 +58,23 @@ one-business-day clock.
 
 ## Rule status
 
-- diversification_stocks: ok — the stocks class holds $78,304.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.
-- diversification_mutual_funds: NOT MET — the mutual funds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
-- diversification_bonds: NOT MET — the bonds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
-- diversification_deadline: ok — 30 trading days and 41 calendar days remain until the diversification deadline of 2026-10-23.
-- position_ceiling: ok — No position is at or above the 30.0% position ceiling.
-- cash_and_margin: ok — Cash balance is $21,680.13.
-- sec_fee_rate: ok — SEC fee rate on sells is UNVERIFIED against a primary DECA SMG source. This module assumes 0.0000278 as a documented placeholder until a primary source confirms the real rate.
+- diversification_stocks: ok (verified) — the stocks class holds $78,304.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.
+- diversification_mutual_funds: NOT MET (verified) — the mutual funds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
+- diversification_bonds: NOT MET (verified) — the bonds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
+- diversification_deadline: ok (verified) — 30 trading days and 41 calendar days remain until the diversification deadline of 2026-10-23.
+- position_ceiling: ok (verified) — No position is at or above the 30.0% position ceiling.
+- cash_and_margin: ok (verified) — Cash balance is $21,680.13.
+- sec_fee_rate: ok (incomplete) — SEC fee rate on sells is UNVERIFIED against a primary DECA SMG source. This module assumes 0.0000278 as a documented placeholder until a primary source confirms the real rate.
+- bitcoin_etf_ruling: ok (conflicting) — Spot bitcoin ETFs are eligible by team ruling (Armaan (team captain) on 2026-09-12). The published DECA SMG guidelines list bitcoin and commodities as banned, and no written confirmation is on file. A prohibited trade can be invalidated after the fact and repeat violations disqualify. Record SIFMA's or the Local Rules page's answer in configs/deca_rulings.json (written_source) to verify it.
 
 ## Equity curve
 
 | Session | Equity | Benchmark |
 |---|---:|---:|
 | 2026-09-08 | $100,000.00 | $765.96 |
+| 2026-09-09 | $100,000.00 | $762.40 |
+| 2026-09-10 | $100,000.00 | $757.83 |
+| 2026-09-11 | $99,985.00 | $764.29 |
 
 ## All recorded trades
 
@@ -82,4 +89,4 @@ one-business-day clock.
 Reasoning for each trade lives in `journal.jsonl` and is the student's own
 work, stored verbatim and hash-chained. It is never generated.
 
-<sub>Generated 2026-09-12T20:52:31-04:00</sub>
+<sub>Generated 2026-09-12T23:05:43-04:00</sub>

@@ -12,7 +12,8 @@
           "quantity": 142,
           "price": "150.28",
           "commission": "5",
-          "opened": "2026-09-11"
+          "opened": "2026-09-11",
+          "stop": "147.68"
         }
       ]
     },
@@ -24,7 +25,8 @@
           "quantity": 140,
           "price": "214.06",
           "commission": "5",
-          "opened": "2026-09-11"
+          "opened": "2026-09-11",
+          "stop": "205.62"
         }
       ]
     },
@@ -36,7 +38,8 @@
           "quantity": 299,
           "price": "90.29",
           "commission": "5",
-          "opened": "2026-09-11"
+          "opened": "2026-09-11",
+          "stop": "85.95"
         }
       ]
     }
