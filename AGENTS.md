@@ -1,277 +1,257 @@
-# Agent guide
+# Agent guide: DECA SMG
 
-How any coding agent (Codex, Claude, or otherwise) operates this repo day to
-day. The *what* lives in the code and docs; this file is the *how we work*
-agreement that is not written down anywhere else.
+How any coding agent (Codex, Claude, or otherwise) runs this repo day to day for
+the **DECA Stock Market Game**. The code says *what* the tool does; this file is
+the working agreement for *how* it is used. If a prompt and this file disagree,
+follow this file and say so.
 
 Read in this order before doing anything:
 
-1. `ledger/deca/LEDGER.md`: current positions, cash, rule status
-2. `ledger/README.md`: how the ledger works and the four things never to get wrong
-3. `README.md`: what the tool is and is not
-4. `docs/OPEN-TASKS.md`: key dates, what is built, what is not
-5. `docs/rules/deca-verified.md`, `docs/rules/wharton-verified.md`: sourced rules
+1. `ledger/deca/LEDGER.md`: positions, cash, entry stops, rule status
+2. `AGENTS.md` (this file)
+3. `docs/STRATEGY.md`: how the sheet decides sells, buys and sizes, and what the
+   backtests do and do not show
+4. `configs/deca_rulings.json` and `docs/rules/deca-verified.md`: the rules and
+   the team's rulings
+5. `ledger/README.md`, `research/README.md`, `README.md`, `docs/OPEN-TASKS.md`
 
-## Who and what
+## Scope
 
-Armaan, a high school student, is competing in two games at once in fall 2026:
+DECA SMG only: Sept 8 to Dec 4 2026, $100,000 start, $5 per trade, every order
+filled at the 4:00 p.m. ET close. Wharton code exists in the repo but is out of
+scope; do not produce Wharton sheets.
 
-- **DECA Stock Market Game**: Sept 8 to Dec 4 2026. $100,000 start, $5/trade,
-  fills at the 4:00 p.m. ET close.
-- **Wharton WInS**: trading Sept 28 to Dec 4 2026. Unverified until the
-  2026-27 materials release Sept 15 2026.
-
-Neither platform has an API. Every order is typed in by hand. The agent's job
-is to produce a well-researched order sheet and keep the book honest, never to
-trade.
+Armaan, a high school student, runs the team. SMG has no API: every order is
+typed in by hand. The agent's job is a well-researched order sheet each morning
+and an honest ledger, never to trade.
 
 ## Environment
 
-- `investlab` is this repo's own CLI (`src/investlab/cli.py`, entry point in
-  `pyproject.toml`). Every command in this file works from any clone: install
-  with `uv sync`, run with `uv run investlab <command>`, list commands with
-  `uv run investlab --help`. If `uv` is missing, `pip install uv` first.
-  Python 3.12 is installed by uv. On Armaan's Mac use `/opt/homebrew/bin/uv`;
-  system python there is 3.9.
-- `data_cache/` is gitignored. A fresh checkout has no prices, so run
-  `uv run investlab data pull` before anything else. It needs outbound access
-  to Yahoo Finance (yfinance). Tiingo is the fallback only if `TIINGO_API_KEY`
-  is set, and as of 2026-09-12 it is not.
-- yfinance sometimes fails for **every** symbol at once, printing "possibly
-  delisted" for all 74 and exiting with code 3. That is a provider outage, not
-  delistings (it happened the morning of 2026-09-11 and cleared by evening).
-  Say so plainly. With an existing cache, continue and label the data stale.
-  With no cache, fall back to Alpaca bars for the check-ins below and say the
-  investlab sheet could not be produced.
-- The research step also needs outbound access to Alpaca and `finviz.com`.
-- The tool reasons in America/New_York time internally. Schedules are Pacific.
+- `investlab` is this repo's CLI (`src/investlab/cli.py`, entry point in
+  `pyproject.toml`). Install with `uv sync`, run with `uv run investlab
+  <command>`, list commands with `uv run investlab --help`. If `uv` is missing,
+  `pip install uv`. Python 3.12 is installed by uv. On Armaan's Mac use
+  `/opt/homebrew/bin/uv`; system python there is 3.9.
+- `uv run pytest -q` must pass before any push that touches code.
+- `data_cache/` is gitignored. A fresh checkout has no prices: run
+  `uv run investlab data pull` first (`--days 1100` before a backtest).
+- Price providers, in order: yfinance, then Alpaca, then Tiingo. Alpaca joins
+  only when `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` are set (read-only data
+  keys; `ALPACA_DATA_FEED=iex` if the account cannot read SIP history). Tiingo
+  joins with `TIINGO_API_KEY`. Neither is set in the repo.
+- yfinance sometimes fails for every symbol at once ("possibly delisted" for all
+  of them, exit code 3). That is an outage, not delistings. Retry once; with a
+  cache, continue and label the data stale; with no cache, say no sheet can be
+  produced and fall back to Alpaca quotes for the held positions.
+- Network access needed: Yahoo Finance, `data.alpaca.markets`, `finviz.com`.
+- The tool reasons in America/New_York time. Schedules are Pacific.
 
-## The agreed daily loop
+## Tracked state
 
-1. **Morning**: the agent runs the routine below, including the research step,
-   and hands over the sheet.
-2. **School day**: Armaan enters orders on the platform by hand before
-   1:00 p.m. Pacific (4:00 p.m. ET).
-3. **After the close**: Armaan sends the platform's confirmation numbers or a
-   screenshot of Equity Positions. **The agent records the fills itself** with
-   `investlab fill`, then commits and pushes `ledger/`. He does not want to run
-   the commands.
-4. **Reasoning is always his.** The agent gives him the `journal add` command
-   and never pre-fills the text.
+| Path | Contents | Changes |
+|---|---|---|
+| `ledger/deca/` | The book: portfolio, trades, cash events, splits, equity curve, statements, journal, `LEDGER.md` | Only in "After trades" |
+| `research/deca/earnings.csv` | Earnings dates | Every morning, from Finviz and yfinance |
+| `research/deca/sheets/` | Each morning's sheet, `.md` and `.json` | Every morning |
+| `configs/deca_rulings.json` | Team rulings (bitcoin ETFs) | Only on Armaan's word |
+| `runs/` | Backtest output | Gitignored |
 
-## Research sources
+## Commands
 
-Every order sheet is checked against three sources before it is handed over.
-They rank in this order of authority:
-
-1. **investlab**: universe, eligibility, rules, sizing, ledger. Authoritative.
-   Never hand-edit its share counts or add tickers it did not propose.
-2. **Alpaca** (connector, read-only): prices, corporate actions, calendar, news.
-3. **Finviz** (https://finviz.com): earnings dates, sector, fundamentals,
-   analyst and insider data, news.
-
-Alpaca and Finviz are how the agent checks the tool's output against the real
-world. What they surface goes into the report as **facts and flags**. When a
-flag means an order should not go in as printed, say so plainly and leave the
-decision to Armaan. When the tool should have caught something itself, add the
-check to investlab with tests rather than repeating it by hand every morning.
-
-Why this matters, from the first trading day: the Sept 11 sheet proposed ORCL
-from the Sept 10 close. Finviz lists ORCL's earnings as "Sep 10 AMC", after
-that close. ORCL filled at $150.28 against an estimate of about $161.66, and
-its entry stop reference ($147.68) ended up 1.7% below the fill instead of
-where it was designed to sit. An earnings-date check would have flagged it.
-
-### Alpaca
-
-Use it for:
-
-- Latest SIP quote and prior close for every proposed ticker and every held
-  position, compared with the sheet's estimate.
-- Daily bars to cross-check the yfinance cache when a pull fails or a price
-  looks wrong.
-- Corporate actions (splits, dividends, symbol changes) on held and proposed
-  names.
-- The market calendar, as a second check on step zero.
-- News headlines from the last two sessions for held and proposed tickers.
-
-Rules:
-
-- **Read-only, always.** Never call an Alpaca order, position, or
-  account-modifying endpoint, on a paper or a live account. Alpaca is not
-  either competition's platform, and an order there is either meaningless or
-  real money.
-- **Use SIP (consolidated) bars for daily closes**, not IEX-only. DECA fills at
-  the official consolidated close; an IEX-only close can differ.
-- Alpaca likely does not carry mutual funds, and SMG's bond list is SMG's own,
-  so keep yfinance for the fund and bond legs.
-- Alpaca also lists crypto. The prohibited list below still applies in full.
-- Wiring Alpaca into `investlab` itself (a provider next to yfinance and
-  Tiingo) is welcome: keys from environment variables only, never committed;
-  tests with no network; the morning run keeps using the existing
-  `data pull` until the new provider is merged to `main`.
-
-### Finviz
-
-Use the per-ticker quote page, `https://finviz.com/stock?t=TICKER`, for held
-and proposed names. The fields that matter most:
-
-- **Earnings**: the next report date, with BMO (before open) or AMC (after
-  close). The top check. The sheet's "If it gaps 20%" column is exactly this
-  risk.
-- **Sector and Industry**: to report how concentrated the book and the
-  proposed orders are.
-- **Recom, Target Price, Insider Trans, Short Float, Rel Volume, 52W High/Low,
-  RSI (14), SMA50/SMA200, Dividend Ex-Date**: context reported as numbers.
-- **News**: headlines, reported as headlines.
-
-Rules:
-
-- Quotes there are delayed. Prices for sizing come from investlab and Alpaca,
-  never from Finviz.
-- Look up only the handful of names on the sheet and in the book. Do not scrape
-  in bulk and do not build a Finviz scraper into investlab. Finviz sells an
-  export and API with its paid Elite plan; whether to pay for it is Armaan's
-  call.
-- The screener is research for Armaan, not a source of orders. A ticker outside
-  `src/investlab/data/universe.py` has to be added to the universe in code before the tool
-  can check its eligibility or size it.
-- Ignore its futures, forex, and crypto sections. None of those can be traded
-  in either competition.
-- Finviz does not cover mutual funds or SMG's bonds.
-
-## Exits: not built yet
-
-`investlab daily` **never proposes a sell.** It skips tickers already held and
-only sizes new buys. Its "Stop ref" column is a protective level computed at
-entry, and `fill` does not store it, so nothing watches it afterward. Exit
-rules are the largest open gap (`docs/OPEN-TASKS.md`).
-
-Until they exist, the morning report covers every held position. Show where
-its price is against cost and against the entry stop reference, when earnings
-are next, and any news or corporate action. If a position has closed at or
-below its stop reference, flag it at the top of the report as a sell review.
-The decision to sell is Armaan's.
-
-Entry stop references, until `fill` records them itself. Add a row whenever a
-buy is recorded, copied from the sheet that proposed it:
-
-| Profile | Ticker | Filled | Fill price | Entry stop ref |
-|---|---|---|---:|---:|
-| deca | ORCL | 2026-09-11 | $150.28 | $147.68 |
-| deca | CVX | 2026-09-11 | $214.06 | $205.62 |
-| deca | WFC | 2026-09-11 | $90.29 | $85.95 |
+| Command | Use |
+|---|---|
+| `investlab doctor` | Cache freshness, providers, rulings, earnings calendar, deadlines |
+| `investlab data pull [--days N]` | Refresh prices |
+| `investlab data metadata` | Check listing venue and size against vendor data |
+| `investlab rules` | Every DECA rule and whether it is met |
+| `investlab daily [--save] [--json]` | **The order sheet**: sells, compliance buys, buys, held positions, alerts |
+| `investlab earnings pull` / `set` / `list` | Earnings calendar |
+| `investlab stop show` / `stop set -s T -p X` | Entry, trailing and active stops |
+| `investlab fill -s T -a buy\|sell -q N -p PRICE --when D [--stop X] [--asset-class bond]` | Record a trade Armaan made |
+| `investlab cash-adjust --amount X --kind interest\|dividend\|fee --when D` | Cash moved without a trade |
+| `investlab split -s T --ratio R --when D` | Restate a held position after a split |
+| `investlab reconcile --cash C --equity E --position T:SHARES:COST_BASIS ... --as-of D --save` | Prove the ledger matches SMG; exits 5 on a mismatch |
+| `investlab snapshot --session D` | Record a session's closing equity; refuses non-sessions |
+| `investlab ledger --refresh` | Regenerate `LEDGER.md` |
+| `investlab backtest --start D --end D --out runs/...` | Replay the sheet against baselines over one window |
+| `investlab backtest-rolling --start D [--end D]` | Replay it over many 62-session windows; the evidence standard for strategy changes |
+| `investlab journal add` / `risk-review` | **Armaan only.** His words, never the agent's |
 
 ## Morning routine (weekdays, 6:30 a.m. Pacific)
 
-DECA prices every order at the 4:00 p.m. ET close, which is 1:00 p.m. Pacific,
-mid-school-day. The sheet has to arrive before school. Do not move this later
-than about 7:00 a.m. Pacific.
+DECA prices orders at 1:00 p.m. Pacific, mid-school-day. The sheet must arrive
+before school; never schedule it later than 7:00 a.m. Pacific.
 
-**Step zero: is the market open?**
+**0. Is the market open?**
 
 ```bash
 uv run python -c "from datetime import datetime; from zoneinfo import ZoneInfo; import investlab.calendar as cal; d=datetime.now(ZoneInfo('America/New_York')).date(); print(d, cal.is_session(d))"
 ```
 
-If `False`, stop. Report one line: market closed, the holiday if known, and
-the next session date. No data pull, no sheet, no suggestions.
+`False`: send one line (market closed, the holiday, the next session) and stop.
+Remaining holiday: **Thu Nov 26 2026**. **Fri Nov 27 2026 closes at 1:00 p.m.
+ET, so the order cutoff is 10:00 a.m. Pacific**; the sheet leads with it.
 
-- Remaining holiday this season: **Thu Nov 26 2026** (Thanksgiving).
-- **Half day Fri Nov 27 2026**: NYSE closes 1:00 p.m. ET, so the DECA cutoff is
-  **10:00 a.m. Pacific**. Lead the report with that.
-
-**On a trading day, run investlab:**
+**1. Run investlab.**
 
 ```bash
 git pull
 uv run investlab data pull
 uv run investlab doctor
-uv run investlab rules --profile deca
-uv run investlab rules --profile wharton
-COLUMNS=200 uv run investlab daily --profile deca
+uv run investlab earnings pull
+COLUMNS=200 uv run investlab daily --save
 ```
 
-`COLUMNS=200` stops the order table truncating dollar amounts.
+**2. Research** every stock the sheet sells or buys and every held stock:
 
-**Then research** every proposed ticker and every held position with Alpaca
-and Finviz, as described above.
+- **Finviz** (`https://finviz.com/stock?t=TICKER`): read *Earnings* (date and
+  BMO/AMC). If it differs from the sheet, record it with
+  `uv run investlab earnings set -s T -d YYYY-MM-DD -t bmo|amc --source finviz`.
+  Also note sector, Recom, Target Price, Insider Trans, Short Float and the news
+  headlines, as numbers and headlines only.
+- **Alpaca** (read-only): the latest SIP quote against the sheet's reference
+  close; any split, dividend or symbol change; news headlines from the last two
+  sessions.
+- If any earnings date changed, re-run `daily --save`: a report inside the
+  window blocks a buy.
 
-**Report**, short enough to read on a phone, time-critical items first:
+**3. Report**, phone-length, in this order:
 
-- Any held position at or below its entry stop reference (sell review).
-- Every unsatisfied rule with the dollar amount and the due date. The DECA
-  diversification requirement ($10,000 net cost in each of stocks, mutual
-  funds and bonds by **Fri Oct 23 2026, 4:00 p.m. ET**) can disqualify the
-  team. Surface it with days remaining whenever unmet.
-- Each proposed order: ticker, action, integer shares, estimated cost, the
-  binding constraint, and research flags. Flag earnings within the next five
-  trading days (or already reported since the close the sheet used), a price
-  move since that close large enough to push the order past its cash budget, a
-  pending corporate action, and heavy concentration in one sector.
-- Held positions: price against cost and stop reference, and the next earnings
-  date.
-- Whether the data is fresh or stale, per source.
-- If nothing needs doing, say so in one line. Do not manufacture activity.
-- Remind him to send confirmation numbers after the close so the fills get
-  recorded. Until they are, `daily` keeps proposing buys he already made.
+1. Time-critical alerts: any SELL, an early close, stale data, a rule deadline
+   (the $10,000 mutual fund and bond minimums are due **Fri Oct 23 2026, 4:00
+   p.m. ET**; student names **Oct 16 2026, 4:00 p.m. ET**, mention within seven
+   days).
+2. **Sell**: ticker, shares, which rule fired, close against the stop.
+3. **Compliance buys**: the fund order and the bond instruction.
+4. **Buy**: ticker, shares, estimated cost, stop, binding constraint, score,
+   and research flags. If Alpaca shows the price has moved enough that the
+   share count costs more than the estimate, say what that many shares cost now
+   and how many shares the estimate buys. Do not change the sheet's count.
+5. **Held positions**: close, return, active stop and distance, next earnings.
+6. Data freshness per source.
+7. If nothing needs doing, say so in one line.
+8. Reminder: after trading, send the account statistics and the trades actually
+   made.
 
-Armaan often asks for the plan directly in conversation. The scheduled run is
-a backstop, so keep it brief.
+**4. Commit** `research/deca/` (sheet and earnings) and push to `main`. Never
+commit `ledger/` in the morning.
 
-## Recording fills
+## After trades: updating the ledger
 
-- DECA's Equity Positions **Cost Basis includes the $5 commission**. Fill price
-  = (cost basis − 5) ÷ quantity. Verified on the first three fills (2026-09-11):
-  ledger cash then matched the platform's Cash Balance to the cent. Check that
-  match after every batch and report any difference.
-- **Always pass `--when YYYY-MM-DD`** with the session the order filled. The
-  default is today in ET, which is wrong when recording after midnight ET or on
-  a weekend.
-- Never record the sheet's estimates as fills. Only confirmation numbers.
-- For each buy, add its entry stop reference to the table under "Exits".
-- After recording: `uv run investlab ledger --profile deca --refresh`, then
-  commit `ledger/` (and `AGENTS.md` if the stop table changed) and push to
-  `main`. The morning run reads from `main`, so a fill left on a branch or an
-  unmerged PR means tomorrow's sheet re-proposes the same buys. If you cannot
-  push to `main`, say so explicitly.
-- `investlab snapshot` stamps the row with today's date unconditionally. Only
-  run it on a trading day, after the close, once `data pull` has that day's bar.
-  Never on a weekend or holiday.
+**Trigger: Armaan sends BOTH his updated SMG account statistics (screenshot or
+numbers: Total Equity, Cash Balance, the Equity Positions table) AND the list of
+trades he actually made.** Nothing else is a trigger: not the sheet, not the
+statistics alone. He may have made only some of the sheet's trades or different
+ones; that is normal.
 
-Open question, not yet resolved: the platform's cost basis includes commission
-but the tool's diversification test (per README) uses net cost without it.
-Budgeting **$10,005 gross per asset class** satisfies either reading, so keep
-doing that until DECA's Local Rules page settles it.
+1. **Match them.** Each listed trade must show in the statistics, and every
+   change in the statistics must be a listed trade (or interest, a dividend, a
+   fee, a split). If they disagree, stop and ask.
+2. **Record each trade** with `investlab fill`, `--when` set to the session it
+   filled:
+   - New position: fill price = (cost basis − 5) ÷ shares. For an addition to a
+     position, use the price from SMG's transaction history.
+   - The entry stop is read from that session's saved sheet. A trade the sheet
+     did not propose gets the strategy's entry stop, price − 3×ATR(14). Pass
+     `--stop` only if Armaan gives one.
+   - Sells: `-a sell` with the sale price.
+   - Bonds: `--asset-class bond` with the platform's price and quantity.
+   - Interest, dividends, fees: `investlab cash-adjust`. Splits: `investlab
+     split`, then `data pull`.
+3. **Verify**: `investlab reconcile --cash ... --equity ... --position
+   T:SHARES:COST_BASIS ... --as-of D --save` must exit 0. On a mismatch, find
+   the cause. Never force it.
+4. **Curve**: `investlab snapshot --session D` for every session since the last
+   row of `ledger/deca/equity.csv` whose close is cached.
+5. `investlab ledger --refresh`, commit `ledger/deca/` with the trades in the
+   message, push to `main`. If you can only open a PR, say so: tomorrow's sheet
+   reads the ledger from `main`.
+6. Remind Armaan to record his reasoning with `investlab journal add`.
+
+## Research sources and how they feed the sheet
+
+1. **investlab** is authoritative for the universe, eligibility, DECA rules,
+   sizing, sells and the ledger. Never hand-edit its share counts or add a
+   ticker it did not propose.
+2. **Alpaca** (read-only connector): quotes, bars, corporate actions, calendar,
+   news. Never call an order, position or account-modifying endpoint, paper or
+   live. Use SIP (consolidated) data: DECA fills at the consolidated close.
+   Alpaca does not carry mutual funds.
+3. **Finviz**: earnings dates first, then sector, analyst, insider and
+   short-interest figures and headlines. Quotes are delayed; never size from
+   them. Look up only the names on the sheet and in the book; do not scrape in
+   bulk or build a scraper. Its futures, forex and crypto pages are irrelevant.
+
+What research changes, and how:
+
+- **Earnings dates** go into `research/deca/earnings.csv` and change the sheet
+  on re-run. This is the one research input the tool acts on directly.
+- **Everything else is a flag** in the report: a price that moved away from the
+  estimate, a pending split, a news headline, heavy sector concentration.
+  Flags inform Armaan; they do not reorder the sheet.
+- **A flag that keeps recurring belongs in code.** Add the check to investlab
+  with tests and document it in `docs/STRATEGY.md`, rather than repeating it by
+  hand.
+
+## How the sheet decides (summary; details in `docs/STRATEGY.md`)
+
+- **Sells** fire on a completed close at or below the active stop (the higher of
+  the entry stop and a ratcheting trailing stop), or when a held name's score
+  falls below the exit threshold while it closes under EMA50 after a minimum
+  hold. Mutual funds and bonds held for compliance are never sold by these
+  rules.
+- **Compliance buys** come before any discretionary buy: an S&P 500 index fund
+  sized to 2% over $10,000 net cost, and instructions for an SMG bond.
+- **Buys** go down the momentum ranking, each passing: score and trend filters,
+  DECA eligibility, earnings, re-entry cooldown, one position per exposure group
+  (all spot bitcoin ETFs are one), sector cap, aggregate open-risk cap, position
+  count, minimum order size, and the drawdown policy.
+- Sale proceeds are not spent the same day.
+
+## Bitcoin ETFs
+
+The team's ruling (`configs/deca_rulings.json`, 2026-09-12) is that spot bitcoin
+ETFs are allowed, so the screen can propose IBIT like any ETF. The published
+DECA text still lists bitcoin as banned, and no written confirmation exists, so
+every sheet shows the ruling as CONFLICTING. Keep it that way until Armaan gives
+a written source (SIFMA's answer via the advisor, or the Local Rules page) to
+paste into `written_source`; if that source says no, set `value` to false.
+
+Do not add a crypto view to the sheet: no bitcoin thesis, no weighting for news
+such as the CLARITY Act. If Armaan wants a bitcoin position for his own reasons,
+he says so and the tool sizes it like any other order.
 
 ## Hard rules
 
-- **Never place trades or log into either platform.** No automation of order
-  entry (see "Deliberately not building" in `docs/OPEN-TASKS.md`). This covers
-  Alpaca too: read-only.
-- **Never suggest IBIT, GLD, SLV, any crypto, options, or futures.** Both
-  competitions prohibit them. A fill going through is not permission;
-  prohibited trades can be invalidated retroactively and repeat violations
-  disqualify the team.
-- **A bond ETF does not satisfy DECA's bond requirement.** DECA classifies
-  every ETF as a stock. The bond leg must come from SMG's own bond list,
-  investment grade at BBB or better. Never suggest AGG, BND or TLT for it.
-- **Never write investment reasoning, a thesis, a trading note, or Investment
-  Policy Statement prose for Armaan.** Wharton: "You may not submit any work
-  generated by an AI program as your own," and it audits trading notes. The
-  research step informs the agent's checks and flags; it never becomes words
-  Armaan submits. He writes the reasoning via `uv run investlab journal add`.
-- Never run tests or scripts that write into `ledger/`. Tests must set
-  `INVESTLAB_LEDGER_ROOT` to a temp directory (see `store.py`).
+- **Never place trades** or log into SMG. Never place orders on Alpaca, paper
+  or live.
+- **Never record a trade** without Armaan's account statistics and his list of
+  trades.
+- **Never suggest** GLD, SLV or other commodity trusts, direct crypto, options,
+  futures or currencies.
+- **A bond ETF does not satisfy DECA's bond requirement**: DECA classifies every
+  ETF as a stock. Only SMG-listed bonds rated BBB or better count.
+- **Never write Armaan's reasoning**: no thesis, trading note, journal entry or
+  drawdown review. Facts and numbers only.
+- Never run tests or scripts that write into `ledger/` or `research/`. Tests
+  use temp roots automatically (`tests/conftest.py`).
 
-## Date-sensitive reminders
+## Changing the strategy
+
+- Pull history (`data pull --days 1100`) and evaluate on many rolling
+  12-week windows against SPY and the compliance-aware baseline, not one long
+  run: results are highly path-dependent (`docs/STRATEGY.md`).
+- Change defaults in `src/investlab/config.py` and `docs/STRATEGY.md` together,
+  with the evidence, in one commit.
+- Every result is survivorship-biased, holds bonds as cash, and ignores
+  earnings dates. Say so wherever a number is quoted.
+
+## Date reminders
 
 | Date | Reminder |
 |---|---|
-| On/after Sep 15 2026 | If Wharton still reports unverified: the 2026-27 materials are out; fill in starting capital, Approved ETF List, position limits, client mandate, trading-activity deadline (`docs/OPEN-TASKS.md`). Capital was $500,000 last season; $100,000 online is wrong. |
-| Oct 9 2026 | Wharton roster due 5:00 p.m. ET; provisional minimum-trading-activity deadline |
-| Oct 16 2026 | DECA student names, hard cutoff 4:00 p.m. ET. Mention within 7 days. |
-| Oct 23 2026 | DECA diversification deadline, 4:00 p.m. ET |
-| Nov 6 2026 | Wharton Investment Policy Statement due. Mention within 7 days. |
-| Nov 26 / 27 2026 | Market closed / half day (10:00 a.m. Pacific DECA cutoff) |
-| Dec 4 2026 | Both competitions end |
+| Fri Oct 16 2026, 4:00 p.m. ET | DECA student names, hard cutoff. Mention within seven days. |
+| Fri Oct 23 2026, 4:00 p.m. ET | $10,000 net cost each in stocks, mutual funds, bonds |
+| Thu Nov 26 2026 | Market closed |
+| Fri Nov 27 2026 | Closes 1:00 p.m. ET: order cutoff 10:00 a.m. Pacific |
+| Fri Dec 4 2026, 4:00 p.m. ET | Game ends |

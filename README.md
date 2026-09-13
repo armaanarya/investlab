@@ -1,42 +1,34 @@
 # investlab
 
-Decision support for two high school investing competitions running at the
-same time in fall 2026:
+Decision support for the **DECA Stock Market Game**, Sept 8 to Dec 4, 2026.
 
-- **DECA Stock Market Game** — Sept 8 to Dec 4, 2026
-- **Wharton Global High School Investment Competition** — trading Sept 28 to Dec 4, 2026
+Each trading morning it prints an order sheet: what to sell, the compliance buys
+DECA requires, what to buy, and where every held position stands against its
+stop. It keeps a ledger that mirrors the SMG account, enforces every DECA rule it
+can verify, and replays the whole process against baselines.
 
-The tool prints a daily order sheet you type into each platform by hand, tracks
-the resulting portfolio, enforces every competition rule it can verify, and
-exports evidence for the graded deliverables.
+The runbook for operating it day to day, by a person or an agent, is
+**[AGENTS.md](AGENTS.md)**. How the sheet decides, and what the backtests show,
+is **[docs/STRATEGY.md](docs/STRATEGY.md)**.
+
+Wharton WInS code is also in the repo. It is research-only and outside the DECA
+process.
 
 ## What this is not
 
-**Not connected to either platform.** Neither competition has an API. Every
-order is entered manually through the web UI. Nothing here authenticates to,
-scrapes, or posts to either site.
+**Not connected to SMG.** SMG has no API. Every order is typed in by hand.
+Nothing here authenticates to, scrapes, or posts to the platform, and nothing
+places an order on any other service either.
 
-**Not a source of your investment thesis.** Wharton's rules state that you may
-not submit AI-generated work as your own, require a Trading Note per trade, and
-audit them — the published instruction reads "You must use actual trading notes
-from trades you made on WInS. (Yes, we will verify this.)" DECA requires that
-portfolios reflect the team's own research.
+**Not a source of your investment thesis.** DECA requires that portfolios reflect
+the team's own research, and Wharton audits AI-written trading notes. The tool
+emits facts: prices, ranks, costs, stops, risk numbers, rule results. You write
+the reasoning; the journal stores it verbatim.
 
-So this tool emits facts: prices, rankings, costs, risk numbers, constraint
-results, reconciliation tables. You write the reasoning. The journal prompts
-you for it and stores your words verbatim. It will not draft a thesis, an
-Investment Policy Statement, or a trading note, and it is built so it cannot.
-
-**Not a predictor.** There is no claim that any strategy here beats a
-benchmark. Baselines are mandatory in every backtest precisely so a failure to
-beat them is visible rather than hidden.
-
-## What is not built yet
-
-See [docs/OPEN-TASKS.md](docs/OPEN-TASKS.md) for the running to-do list: the
-backtest engine, baselines and tear sheets, the DECA items that need someone
-with a competition login, and everything Wharton needs once its 2026-27
-materials release on September 15.
+**Not a predictor.** The sheet is a disciplined process for sizing, stopping and
+staying compliant. Over 30 rolling 12-week windows it beat SPY about half the
+time, and a plain momentum baseline did better. See `docs/STRATEGY.md` before
+trusting any number.
 
 ## Setup
 
@@ -49,117 +41,147 @@ uv sync
 uv run investlab --help
 ```
 
-## Daily use
+## The daily process
+
+**Morning, before school** (orders fill at the 4:00 p.m. ET close, 1:00 p.m.
+Pacific):
 
 ```bash
-uv run investlab data pull                       # refresh the local price cache
-uv run investlab daily --profile deca            # today's order sheet
-uv run investlab fill -s AGG -a buy -q 102 -p 99.05   # what actually executed
-uv run investlab journal add -s AGG -a buy -q 102 -p 99.05  # why you did it
+uv run investlab data pull
+uv run investlab earnings pull
+uv run investlab daily --save
 ```
 
-**`fill` is not optional.** It is the only command that writes to your
-portfolio. Until you run it, `daily` still believes you hold the old positions
-with the old cash, and will keep proposing buys you have already made. Use the
-numbers from the platform's confirmation, not the ones the order sheet
-predicted — DECA prices at the session close, so what you were quoted when you
-clicked is not what you paid.
+Then check each stock on the sheet and in the book on Finviz and Alpaca (see
+below) and enter the orders you choose on SMG.
 
-Signals compute from the **previous completed close**, so run it in the
-morning. That matters because of a timing difference between the two games:
+**After trading**, from the platform's own numbers and the trades you actually
+made:
 
-- **DECA fills end of day.** An order entered any time between 9:30 a.m. and
-  4:00 p.m. ET fills at *that same day's* closing price, not the price when you
-  clicked. After-hours orders fill at the next business day's close. Limit
-  orders do not rest — one pricing attempt, then gone.
-- **Wharton fills in real time** during market hours. Displayed prices lag 10
-  to 15 minutes; fills do not. After-hours orders fill at the next day's open.
+```bash
+uv run investlab fill -s CVX -a buy -q 140 -p 214.06 --when 2026-09-11
+uv run investlab cash-adjust --amount 14.20 --kind interest --when 2026-09-12
+uv run investlab reconcile --cash 21680.13 --equity 99985.00 --position CVX:140:29973.40 --as-of 2026-09-11 --save
+uv run investlab snapshot --session 2026-09-11
+uv run investlab journal add -s CVX -a buy -q 140 -p 214.06
+```
 
-A morning run gives you the whole school day to enter DECA orders before the
-4:00 p.m. deadline.
+`fill` is the only way a trade enters the book. Until it runs, `daily` still
+believes the old positions and cash. DECA's Equity Positions cost basis includes
+the $5 commission, so fill price = (cost basis − 5) ÷ shares.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `daily [--save] [--json]` | The order sheet: sells, compliance buys, buys, held positions, alerts |
+| `rules` | Every DECA rule and whether it is met |
+| `doctor` | Cache freshness, providers, rulings, earnings calendar, deadlines |
+| `data pull` / `data status` / `data metadata` | Prices, and a check of listing venues and sizes |
+| `earnings pull` / `set` / `list` | The earnings calendar that blocks buys and flags holdings |
+| `stop show` / `stop set` | Entry, trailing and active stops |
+| `fill` | Record a trade that executed |
+| `cash-adjust` | Record interest, a dividend, or a fee |
+| `split` | Restate a position after a stock split |
+| `reconcile` | Prove the ledger matches SMG; exits 5 on a mismatch |
+| `snapshot --session D` | Record a session's closing equity |
+| `ledger [--refresh]` | Show the book; regenerate `ledger/deca/LEDGER.md` |
+| `risk-review` | Your own note that lifts a drawdown halt |
+| `journal add` / `list` / `export` | Your own reasoning, hash-chained |
+| `backtest --start D --end D` | Replay the sheet against five baselines and write a tear sheet |
+| `backtest-rolling --start D` | Replay it over many 12-week windows and score how often it beat SPY |
+
+## How the sheet decides
+
+In short (details and evidence in `docs/STRATEGY.md`):
+
+- **Sells** when a completed close is at or below the active stop (the higher of
+  the entry stop and a trailing stop that only rises), or when a held name's
+  momentum score has collapsed while it trades under its 50-day average.
+- **Compliance buys** next: an S&P 500 index fund sized 2% over DECA's $10,000
+  net-cost minimum, and exact instructions for an SMG-listed bond.
+- **Buys** last, down the momentum ranking, each passing DECA eligibility,
+  trend, earnings, cooldown, exposure-group, sector, open-risk, position-count,
+  minimum-size and drawdown checks, and sized so a stop-out costs at most 2% of
+  equity.
 
 ## Research sources
 
-The order sheet is one of three inputs to each morning's plan:
+The sheet is one of three inputs to each morning's plan:
 
-- **investlab**: universe, eligibility, rules, sizing, ledger. It decides the
-  share counts.
-- **Alpaca** (read-only): consolidated quotes and daily bars, corporate
-  actions, market calendar, news. Used to check the sheet's prices and events
-  against the market. Never used to place an order, paper or live.
-- **[Finviz](https://finviz.com)**: next earnings date, sector and industry,
-  valuation, analyst, insider and short-interest figures, news, one quote page
-  per ticker. Its quotes are delayed, so it is never a price source for sizing.
+- **investlab** decides eligibility, share counts, sells and the ledger.
+- **Alpaca** (read-only): consolidated quotes and daily bars, corporate actions,
+  the market calendar, news. `data pull` falls back to Alpaca when
+  `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` are set. Never used to place an
+  order, paper or live.
+- **[Finviz](https://finviz.com)**: the next earnings date and time first, then
+  sector, analyst, insider and short-interest figures and headlines, from each
+  ticker's quote page. Its quotes are delayed, so it is never a price source.
 
-The agent running the morning routine checks every proposed order and every
-held position against Alpaca and Finviz and reports what it finds as facts and
-flags: earnings inside the holding window, a price that has moved away from the
-sheet's estimate, a pending split or dividend, sector concentration, a position
-at its stop reference. See [AGENTS.md](AGENTS.md) for the full routine.
+Earnings dates go into `research/deca/earnings.csv` and change the sheet: a
+report inside the window blocks a buy. Everything else surfaces as a flag in the
+report. See [AGENTS.md](AGENTS.md) for the routine.
 
-**`daily` does not propose sells yet.** It sizes new buys only. Until exit rules
-are built, the morning report shows each held position against its entry stop
-reference so a position going wrong is visible.
+## Things that will bite you
+
+**Bitcoin ETFs rest on a team ruling, not the published rules.** The team has
+ruled that spot bitcoin ETFs such as IBIT are allowed, recorded in
+`configs/deca_rulings.json`, so the sheet can propose IBIT and treats every spot
+bitcoin ETF as one position. DECA's published guidelines still name "futures,
+options, commodities, currencies and bitcoin" as banned, and prohibited trades
+can be invalidated after the fact. Every sheet shows the conflict until a written
+confirmation is recorded. GLD, SLV and other commodity trusts stay blocked.
+
+**DECA's diversification test is on net cost, not market value.** At least
+$10,000 in each of stocks, mutual funds and bonds by **Oct 23, 2026, 4:00 p.m.
+ET**, held to Dec 4. The $5 commission sits outside net cost, so buy above
+$10,000. A position *declining* below $10,000 needs no action; *selling* out of
+a class starts a one-business-day clock to restore it.
+
+**A bond ETF does not satisfy the bond leg.** DECA counts every ETF as a stock.
+Only bonds SMG lists count, rated BBB or better, in $1,000 face (Treasuries
+$100). At par, $10,200 of net cost needs $11,000 face.
+
+**Every order fills at the close.** An order entered 9:30 a.m. to 4:00 p.m. ET
+fills at that day's close; after hours, at the next session's close. Limit orders
+do not rest. **Fri Nov 27, 2026 closes at 1:00 p.m. ET**, so that day's cutoff is
+10:00 a.m. Pacific.
+
+**Backtests flatter.** The universe is fixed as of 2026-09-06 and
+survivorship-biased, bonds are held as cash, earnings dates are not applied, and
+results swing widely with the start date. Returns are never annualised.
 
 ## Repository layout
 
 ```
-src/investlab/
-  contracts.py       frozen cross-module types; the integration surface
-  config.py          per-competition capital, costs, risk posture
-  calendar.py        NYSE sessions and business-day arithmetic
-  money.py           Decimal money; shares always round DOWN
-  data/              price cache, providers, the fixed universe
-  features/          indicators and cross-sectional ranking
-  portfolio/         ledger, integer share sizing, risk state
-  competitions/      deca.py and wharton.py, which never import each other
-  backtest/          purpose-built daily event loop plus baselines
-  reports/           tear sheets and chart exports
-  journal.py         student-authored decision log
+AGENTS.md            the operating runbook
+configs/             team rulings (deca_rulings.json)
 docs/
-  OPEN-TASKS.md      what is left to build, per competition
+  STRATEGY.md        how the sheet decides, and the backtest evidence
+  OPEN-TASKS.md      what is left, what is human-only, what is deferred
   rules/             verified competition rules, with sources
-  superpowers/specs/ the design spec and the decisions behind it
+  codex/             prompts for handing the process to Codex
+ledger/deca/         the book: portfolio, trades, cash events, curve, LEDGER.md
+research/deca/       earnings calendar and saved order sheets
+src/investlab/
+  cli.py             every command
+  plan.py            the order sheet (pure function; the backtest calls it too)
+  sheets.py          saved sheets, markdown rendering, stop lookup
+  screen.py          indicators and the cross-sectional ranking
+  earnings.py        earnings calendar and gap sessions
+  contracts.py       shared types
+  config.py          rules constants and strategy parameters
+  competitions/      deca.py rules engine; wharton.py (research-only)
+  portfolio/         ledger, sizing, risk and drawdown, exits
+  data/              cache, providers (yfinance, Alpaca, Tiingo), universe
+  backtest/          event loop and baselines
+  reports/           tear sheet
+tests/               pytest suite; synthetic market fixtures in conftest.py
 ```
-
-## Things that will bite you
-
-**IBIT, GLD and SLV are prohibited at both competitions.** DECA's rules name
-"futures, options, commodities, currencies and bitcoin"; IBIT fails as bitcoin
-exposure, as a commodity-backed grantor trust, and because the tradeable
-universe is "stocks and mutual funds" and a commodity trust is neither. Wharton
-bans crypto outright and separately restricts ETFs to an approved list. There
-is no published exclusion list, so the interface may accept the order anyway. A
-fill is not permission — prohibited trades can be invalidated after the fact
-and repeat violations disqualify the team. The tool hard-blocks these.
-
-**DECA's diversification test is on net cost, not market value.** At least
-$10,000 in each of stocks, mutual funds and bonds by **Oct 23, 2026, 4:00 p.m.
-ET**, held to Dec 4.
-
-Net cost means shares times price. The $5 commission sits outside it, so the
-trap is thinking in terms of what leaves your account: spend $10,000 *gross*
-and you land at $9,995 of net cost, which fails. **Budget $10,005 gross per
-asset class.** The tool checks this and tells you the shortfall in dollars.
-
-A position *declining* below $10,000 needs no action. *Selling* out of a class
-starts a one-business-day clock to restore it.
-
-**Wharton's 2026-27 rules do not exist yet.** They release **Sept 15, 2026**.
-Until a season config is supplied, the Wharton profile stays unverified and
-refuses to emit an order sheet. Starting capital was $500,000 last season; the
-$100,000 figure that circulates online, including in StockTrak's own boilerplate
-FAQ, is wrong for this competition.
-
-**Backtests are fixed-universe and survivorship-biased.** A survivorship-free
-universe is not obtainable at zero budget: free sources give you historical
-index membership including delisted names, but not their prices. The universe
-is declared up front and every report says so. Individual corporate bond price
-history is likewise unobtainable, so the bond sleeve is accounted for, never
-backtested.
 
 ## Sources
 
 Competition rules were verified against primary sources on 2026-09-06 and are
-recorded with citations in `docs/rules/`. Re-check the Wharton pages on Sept 15
-and the SMG in-portfolio Local Rules page once you have account access.
+recorded with citations in `docs/rules/`. Platform facts (cost basis includes
+commission, end-of-day execution) were verified on 2026-09-11. Re-check the SMG
+in-portfolio Local Rules page once you can.

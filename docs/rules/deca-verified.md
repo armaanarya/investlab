@@ -46,6 +46,27 @@ disqualify the team. SIFMA holds sole disqualification authority.
 Same logic bans GLD, SLV and other physically-backed commodity trusts.
 To resolve: advisor must email decasmg@sifma.org (students get no reply).
 
+## Team ruling 2026-09-12: spot bitcoin ETFs allowed (NOT confirmed in writing)
+Armaan (team captain) ruled that spot bitcoin ETFs such as IBIT are allowed in
+DECA SMG. The tool follows the ruling, recorded in `configs/deca_rulings.json`:
+- IBIT is eligible, subject to every other check (exchange, price, market cap).
+- Every spot bitcoin ETF counts as ONE exposure: the sheet never holds two.
+- GLD, SLV and other commodity trusts, direct crypto, futures, options and
+  currencies stay prohibited.
+The verdict above is still the reading of the published text, so every sheet
+reports the ruling as CONFLICTING until a written source (SIFMA's answer via the
+advisor, or the in-portfolio Local Rules page) is pasted into `written_source`.
+If that source says bitcoin ETFs are banned, set `value` to false.
+Listing venues checked 2026-09-12: IBIT is Nasdaq-listed (eligible). FBTC and
+ARKB list on Cboe BZX, which the NYSE/NASDAQ rule excludes.
+
+## Verified on the platform, 2026-09-11
+- The portfolio page shows "Trade Type: ENDOFDAY" and "Ranking Method: S&P500".
+- Equity Positions "Cost Basis" INCLUDES the $5 commission: 140 CVX filled at
+  $214.06 shows $29,973.40. Fill price = (cost basis - 5) / shares.
+- After the first three fills, Cash Balance ($21,680.13) and Total Equity
+  ($99,985.00) matched the ledger to the cent.
+
 ## Diversification - HARD RULE
 $10,000 minimum NET COST in EACH of stocks / mutual funds / bonds by
 **Friday Oct 23 2026 4:00p ET**, held through Dec 4 2026 4:00p ET.
