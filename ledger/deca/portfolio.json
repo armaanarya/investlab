@@ -1,7 +1,44 @@
 {
   "profile": "deca",
-  "as_of": "2026-09-08",
+  "as_of": "2026-09-11",
   "starting_cash": "100000",
-  "cash": "100000",
-  "positions": []
+  "cash": "21680.13",
+  "positions": [
+    {
+      "symbol": "ORCL",
+      "asset_class": "stock",
+      "lots": [
+        {
+          "quantity": 142,
+          "price": "150.28",
+          "commission": "5",
+          "opened": "2026-09-11"
+        }
+      ]
+    },
+    {
+      "symbol": "CVX",
+      "asset_class": "stock",
+      "lots": [
+        {
+          "quantity": 140,
+          "price": "214.06",
+          "commission": "5",
+          "opened": "2026-09-11"
+        }
+      ]
+    },
+    {
+      "symbol": "WFC",
+      "asset_class": "stock",
+      "lots": [
+        {
+          "quantity": 299,
+          "price": "90.29",
+          "commission": "5",
+          "opened": "2026-09-11"
+        }
+      ]
+    }
+  ]
 }

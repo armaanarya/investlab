@@ -5,21 +5,21 @@ by hand. The competition platform is the authoritative record; this
 mirrors it. Returns are period returns over the competition window and
 are **not annualised**.
 
-**As of 2026-09-08**
+**As of 2026-09-11**
 
 ## Headline
 
 | | |
 |---|---:|
-| Equity | **$100,000.00** |
+| Equity | **$99,985.00** |
 | Started with | $100,000.00 |
-| Total P&L | **$0.00 (+0.00%)** |
+| Total P&L | **$-15.00 (-0.02%)** |
 | Realised (closed trades) | $0.00 |
 | Unrealised (open positions) | $0.00 |
-| Cash | $100,000.00 (100.0% of equity) |
-| Invested at cost | $0.00 |
-| Commissions paid | $0.00 |
-| Trades recorded | 0 |
+| Cash | $21,680.13 (21.7% of equity) |
+| Invested at cost | $78,304.87 |
+| Commissions paid | $15.00 |
+| Trades recorded | 3 |
 | Max drawdown (recorded) | 0.00% |
 
 ### Versus S&P 500 (SPY)
@@ -29,7 +29,11 @@ sessions; run `investlab snapshot` on each trading day to build it.
 
 ## Open positions
 
-None.
+| Symbol | Class | Shares | Avg cost | Mark | Cost basis | Value | Unrealised | Return | Days |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| ORCL | stock | 142 | $150.28 | $150.28 | $21,339.76 | $21,339.76 | $0.00 | +0.00% | 0 |
+| CVX | stock | 140 | $214.06 | $214.06 | $29,968.40 | $29,968.40 | $0.00 | +0.00% | 0 |
+| WFC | stock | 299 | $90.29 | $90.29 | $26,996.71 | $26,996.71 | $0.00 | +0.00% | 0 |
 
 ## Closed trades
 
@@ -44,19 +48,19 @@ one-business-day clock.
 
 | Class | Net cost | $10,000 minimum by 2026-10-23 |
 |---|---:|---|
-| stocks | $0.00 | **NOT MET** |
+| stocks | $78,304.87 | met |
 | ETFs (count as stocks) | $0.00 | counts toward stocks |
 | mutual funds | $0.00 | **NOT MET** |
 | bonds | $0.00 | **NOT MET** |
 
 ## Rule status
 
-- diversification_stocks: NOT MET — the stocks class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
+- diversification_stocks: ok — the stocks class holds $78,304.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.
 - diversification_mutual_funds: NOT MET — the mutual funds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
 - diversification_bonds: NOT MET — the bonds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
-- diversification_deadline: ok — 33 trading days and 45 calendar days remain until the diversification deadline of 2026-10-23.
+- diversification_deadline: ok — 30 trading days and 41 calendar days remain until the diversification deadline of 2026-10-23.
 - position_ceiling: ok — No position is at or above the 30.0% position ceiling.
-- cash_and_margin: ok — Cash balance is $100,000.00.
+- cash_and_margin: ok — Cash balance is $21,680.13.
 - sec_fee_rate: ok — SEC fee rate on sells is UNVERIFIED against a primary DECA SMG source. This module assumes 0.0000278 as a documented placeholder until a primary source confirms the real rate.
 
 ## Equity curve
@@ -67,11 +71,15 @@ one-business-day clock.
 
 ## All recorded trades
 
-None yet.
+| Session | Symbol | Action | Shares | Price | Commission | Cash after |
+|---|---|---|---:|---:|---:|---:|
+| 2026-09-11 | ORCL | buy | 142 | $150.28 | $5.00 | $78,655.24 |
+| 2026-09-11 | CVX | buy | 140 | $214.06 | $5.00 | $48,681.84 |
+| 2026-09-11 | WFC | buy | 299 | $90.29 | $5.00 | $21,680.13 |
 
 ---
 
 Reasoning for each trade lives in `journal.jsonl` and is the student's own
 work, stored verbatim and hash-chained. It is never generated.
 
-<sub>Generated 2026-09-08T18:39:05-04:00</sub>
+<sub>Generated 2026-09-12T20:52:31-04:00</sub>

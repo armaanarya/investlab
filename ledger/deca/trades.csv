@@ -1,1 +1,4 @@
 session,recorded_at,symbol,action,quantity,price,commission,fees,asset_class,cash_after,note
+2026-09-11,2026-09-12T20:51:27-04:00,ORCL,buy,142,150.28,5,0,stock,78655.24,
+2026-09-11,2026-09-12T20:51:27-04:00,CVX,buy,140,214.06,5,0,stock,48681.84,
+2026-09-11,2026-09-12T20:51:27-04:00,WFC,buy,299,90.29,5,0,stock,21680.13,
