@@ -303,6 +303,160 @@ class TiingoProvider:
 
 
 # ---------------------------------------------------------------------------
+# Alpaca
+# ---------------------------------------------------------------------------
+
+
+class AlpacaProvider:
+    """Alpaca Market Data v2 daily bars. Read-only: this class only ever calls
+    the market data host, never the trading API.
+
+    Credentials come from `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY`, Alpaca's
+    own variable names. Without both, `available()` is False and the chain
+    skips it. The feed defaults to `sip` (consolidated tape), because DECA fills
+    at the official consolidated close and an IEX-only close can differ; set
+    `ALPACA_DATA_FEED=iex` only if the account cannot read SIP history.
+
+    Raw bars supply OHLC; a second request with `adjustment=all` supplies the
+    adjusted close. Alpaca does not carry mutual funds, so those fall through
+    to the next provider. The free plan refuses SIP data from the last 15
+    minutes, so the request window is capped 16 minutes before now.
+    """
+
+    name = "alpaca"
+    _BARS_URL = "https://data.alpaca.markets/v2/stocks/bars"
+    _CHUNK = 50
+
+    def __init__(
+        self,
+        *,
+        key_id: str | None = None,
+        secret_key: str | None = None,
+        feed: str | None = None,
+        http_get: Callable[[str, dict[str, str]], bytes] | None = None,
+        now: Callable[[], Any] | None = None,
+        price_dp: int = DEFAULT_PRICE_DP,
+    ) -> None:
+        self.key_id = key_id if key_id is not None else os.environ.get("APCA_API_KEY_ID")
+        self.secret_key = (
+            secret_key if secret_key is not None else os.environ.get("APCA_API_SECRET_KEY")
+        )
+        self.feed = feed or os.environ.get("ALPACA_DATA_FEED", "sip")
+        self._http_get = http_get
+        self._now = now
+        self.price_dp = price_dp
+
+    def available(self) -> bool:
+        return bool(self.key_id and self.secret_key)
+
+    def fetch(self, symbols: list[str], start: date, end: date) -> list[Bar]:
+        if not self.available() or not symbols:
+            return []
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
+
+        eastern = ZoneInfo("America/New_York")
+        now = self._now() if self._now else datetime.now(UTC)
+        start_dt = datetime(start.year, start.month, start.day, tzinfo=eastern).astimezone(UTC)
+        day_after = end + timedelta(days=1)
+        end_dt = min(
+            datetime(day_after.year, day_after.month, day_after.day, tzinfo=eastern).astimezone(
+                UTC
+            ),
+            now - timedelta(minutes=16),
+        )
+        if end_dt <= start_dt:
+            return []
+
+        bars: list[Bar] = []
+        for i in range(0, len(symbols), self._CHUNK):
+            chunk = symbols[i : i + self._CHUNK]
+            raw = self._fetch_rows(chunk, start_dt, end_dt, "raw")
+            adjusted = self._fetch_rows(chunk, start_dt, end_dt, "all")
+            for symbol, rows in raw.items():
+                adj_by_day = {
+                    self._session(r["t"], eastern): r.get("c") for r in adjusted.get(symbol, [])
+                }
+                for row in rows:
+                    bar = self._row_to_bar(symbol, row, adj_by_day, eastern, end)
+                    if bar is not None:
+                        bars.append(bar)
+        return bars
+
+    @staticmethod
+    def _session(stamp: str, eastern: Any) -> date:
+        from datetime import datetime
+
+        return datetime.fromisoformat(stamp).astimezone(eastern).date()
+
+    def _fetch_rows(self, symbols: list[str], start_dt, end_dt, adjustment: str) -> dict:
+        from urllib.parse import urlencode
+
+        out: dict[str, list[dict]] = {}
+        token: str | None = None
+        for _page in range(1000):
+            params = {
+                "symbols": ",".join(symbols),
+                "timeframe": "1Day",
+                "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "adjustment": adjustment,
+                "feed": self.feed,
+                "limit": "10000",
+            }
+            if token:
+                params["page_token"] = token
+            try:
+                payload = json.loads(self._get(f"{self._BARS_URL}?{urlencode(params)}"))
+            except Exception:
+                return out
+            for symbol, rows in (payload.get("bars") or {}).items():
+                out.setdefault(symbol, []).extend(rows or [])
+            token = payload.get("next_page_token")
+            if not token:
+                break
+        return out
+
+    def _row_to_bar(
+        self, symbol: str, row: dict, adj_by_day: dict, eastern: Any, end: date
+    ) -> Bar | None:
+        try:
+            session = self._session(row["t"], eastern)
+            values = {k: row.get(k) for k in ("o", "h", "l", "c")}
+        except (KeyError, TypeError, ValueError):
+            return None
+        if session > end or any(_is_nan(v) for v in values.values()):
+            return None
+        adj = adj_by_day.get(session)
+        try:
+            return Bar(
+                symbol=symbol,
+                session=session,
+                open=_round_price(values["o"], self.price_dp),
+                high=_round_price(values["h"], self.price_dp),
+                low=_round_price(values["l"], self.price_dp),
+                close=_round_price(values["c"], self.price_dp),
+                adj_close=_round_price(adj if not _is_nan(adj) else values["c"], self.price_dp),
+                volume=_row_volume(row.get("v")),
+                source=self.name,
+            )
+        except (ValueError, TypeError):
+            return None
+
+    def _get(self, url: str) -> bytes:
+        headers = {
+            "APCA-API-KEY-ID": self.key_id or "",
+            "APCA-API-SECRET-KEY": self.secret_key or "",
+            "Accept": "application/json",
+        }
+        if self._http_get is not None:
+            return self._http_get(url, headers)
+        request = urllib.request.Request(url, headers=headers)  # noqa: S310
+        with urllib.request.urlopen(request, timeout=20) as resp:  # noqa: S310
+            return resp.read()
+
+
+# ---------------------------------------------------------------------------
 # Chain
 # ---------------------------------------------------------------------------
 

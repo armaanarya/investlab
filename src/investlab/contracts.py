@@ -120,6 +120,13 @@ class Instrument:
     # True for spot-crypto and physically-backed commodity trusts (IBIT, GLD,
     # SLV). Both competitions prohibit these. Set explicitly, never inferred.
     is_commodity_or_crypto_trust: bool = False
+    # A spot bitcoin ETF. Still flagged as a trust above; a competition profile
+    # may lift the prohibition for this narrower class by an explicit ruling.
+    is_spot_bitcoin_etf: bool = False
+    sector: str = ""
+    # Instruments that hold the same underlying exposure (every spot bitcoin
+    # ETF is one bet). Sizing and selection treat a group as one position.
+    exposure_group: str | None = None
 
 
 @runtime_checkable

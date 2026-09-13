@@ -1,0 +1,12 @@
+{
+  "bitcoin_etfs_allowed": {
+    "value": true,
+    "decided_by": "Armaan (team captain)",
+    "decided_on": "2026-09-12",
+    "basis": "Team statement that DECA SMG permits spot bitcoin ETFs such as IBIT.",
+    "written_source": null,
+    "conflicts_with": "docs/rules/deca-verified.md: the published DECA SMG guidelines list futures, options, commodities, currencies and bitcoin as banned, and the 2026-09-06 review concluded IBIT should not be bought until SIFMA confirms in writing.",
+    "to_verify": "Advisor emails decasmg@sifma.org, or the team copies the relevant text from the in-portfolio Local Rules page. Paste the confirmation or its location into written_source to mark this ruling verified.",
+    "scope": "Spot bitcoin ETFs listed on NYSE or NASDAQ only. Commodity trusts (GLD, SLV), direct crypto, futures, options and currencies stay prohibited."
+  }
+}

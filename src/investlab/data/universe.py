@@ -9,10 +9,10 @@ disclose it.
 
 The default universe is S&P-100-style large caps (including `BRK.B`, which
 exercises the `.`-to-`-` vendor symbol translation downstream in
-`data/providers.py`), five bond ETFs, four mutual funds, and three
-commodity/crypto trusts (IBIT, GLD, SLV) included specifically so the
-competition modules can see them and reject them by rule, rather than the
-universe silently omitting them.
+`data/providers.py`), five bond ETFs, four mutual funds, two commodity
+trusts (GLD, SLV) kept so the rules engines can reject them by rule, and the
+spot bitcoin ETF IBIT, whose DECA eligibility rests on a recorded team
+ruling (see `configs/deca_rulings.json`).
 """
 
 from __future__ import annotations
@@ -64,7 +64,8 @@ class Universe:
         return [i for i in self.instruments if i.asset_class is asset_class]
 
     def prohibited(self) -> list[Instrument]:
-        """Instruments both competitions reject: commodity/crypto trusts."""
+        """Commodity and crypto trusts: prohibited unless a profile's ruling
+        lifts the ban for a narrower class (DECA, spot bitcoin ETFs)."""
         return [i for i in self.instruments if i.is_commodity_or_crypto_trust]
 
     def bias_warning(self) -> str:
@@ -165,10 +166,84 @@ _MUTUAL_FUNDS: tuple[tuple[str, str], ...] = (
 )
 
 _TRUSTS: tuple[tuple[str, str], ...] = (
-    ("IBIT", "iShares Bitcoin Trust"),
     ("GLD", "SPDR Gold Shares"),
     ("SLV", "iShares Silver Trust"),
 )
+
+# Spot bitcoin ETFs. Flagged as crypto trusts (Wharton bans them outright), and
+# additionally as spot bitcoin ETFs so the DECA profile can apply its team
+# ruling to this class alone. Listing venues verified against vendor metadata
+# on 2026-09-12: IBIT is Nasdaq-listed. FBTC and ARKB list on Cboe BZX, which
+# DECA's NYSE/NASDAQ rule excludes, so they are deliberately absent.
+_BITCOIN_ETFS: tuple[tuple[str, str, str], ...] = (("IBIT", "iShares Bitcoin Trust ETF", "NASDAQ"),)
+
+BITCOIN_GROUP = "BTC"
+
+# GICS sector per equity, used for the sector concentration cap. Visa and
+# Mastercard sit in Financials since the 2023 GICS reclassification.
+_SECTORS: dict[str, str] = {
+    "AAPL": "Information Technology",
+    "MSFT": "Information Technology",
+    "NVDA": "Information Technology",
+    "AVGO": "Information Technology",
+    "ADBE": "Information Technology",
+    "CRM": "Information Technology",
+    "AMD": "Information Technology",
+    "INTC": "Information Technology",
+    "CSCO": "Information Technology",
+    "ORCL": "Information Technology",
+    "ACN": "Information Technology",
+    "IBM": "Information Technology",
+    "TXN": "Information Technology",
+    "QCOM": "Information Technology",
+    "GOOGL": "Communication Services",
+    "META": "Communication Services",
+    "NFLX": "Communication Services",
+    "DIS": "Communication Services",
+    "T": "Communication Services",
+    "VZ": "Communication Services",
+    "AMZN": "Consumer Discretionary",
+    "TSLA": "Consumer Discretionary",
+    "HD": "Consumer Discretionary",
+    "MCD": "Consumer Discretionary",
+    "NKE": "Consumer Discretionary",
+    "LOW": "Consumer Discretionary",
+    "SBUX": "Consumer Discretionary",
+    "PG": "Consumer Staples",
+    "COST": "Consumer Staples",
+    "PEP": "Consumer Staples",
+    "KO": "Consumer Staples",
+    "WMT": "Consumer Staples",
+    "PM": "Consumer Staples",
+    "BRK.B": "Financials",
+    "JPM": "Financials",
+    "V": "Financials",
+    "MA": "Financials",
+    "BAC": "Financials",
+    "WFC": "Financials",
+    "GS": "Financials",
+    "MS": "Financials",
+    "SPGI": "Financials",
+    "BLK": "Financials",
+    "AXP": "Financials",
+    "UNH": "Health Care",
+    "JNJ": "Health Care",
+    "MRK": "Health Care",
+    "ABBV": "Health Care",
+    "TMO": "Health Care",
+    "ABT": "Health Care",
+    "PFE": "Health Care",
+    "XOM": "Energy",
+    "CVX": "Energy",
+    "LIN": "Materials",
+    "HON": "Industrials",
+    "UPS": "Industrials",
+    "CAT": "Industrials",
+    "BA": "Industrials",
+    "GE": "Industrials",
+}
+
+FIXED_INCOME = "Fixed Income"
 
 
 # Real listing venue per symbol, resolved from vendor metadata on 2026-09-07.
@@ -326,6 +401,7 @@ def default_universe() -> Universe:
                 asset_class=AssetClass.STOCK,
                 exchange=_EXCHANGES[symbol],
                 market_cap=_MARKET_CAPS.get(symbol),
+                sector=_SECTORS[symbol],
             )
         )
 
@@ -337,6 +413,7 @@ def default_universe() -> Universe:
                 asset_class=AssetClass.ETF,
                 exchange="NYSE Arca",
                 market_cap=_MARKET_CAPS.get(symbol),
+                sector=FIXED_INCOME,
             )
         )
 
@@ -347,6 +424,7 @@ def default_universe() -> Universe:
                 name=name,
                 asset_class=AssetClass.MUTUAL_FUND,
                 exchange="MUTUAL FUND",
+                sector=FIXED_INCOME if symbol == "VBTLX" else "US Equity Fund",
             )
         )
 
@@ -359,6 +437,22 @@ def default_universe() -> Universe:
                 exchange="NYSE Arca",
                 market_cap=_MARKET_CAPS.get(symbol),
                 is_commodity_or_crypto_trust=True,
+                sector="Commodities",
+            )
+        )
+
+    for symbol, name, exchange in _BITCOIN_ETFS:
+        instruments.append(
+            Instrument(
+                symbol=symbol,
+                name=name,
+                asset_class=AssetClass.ETF,
+                exchange=exchange,
+                market_cap=_MARKET_CAPS.get(symbol),
+                is_commodity_or_crypto_trust=True,
+                is_spot_bitcoin_etf=True,
+                sector="Digital Assets",
+                exposure_group=BITCOIN_GROUP,
             )
         )
 

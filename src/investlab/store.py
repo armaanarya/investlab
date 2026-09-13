@@ -24,7 +24,7 @@ import csv
 import json
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +64,14 @@ TRADE_COLUMNS = [
     "cash_after",
     "note",
 ]
+
+
+CASH_EVENT_COLUMNS = ["session", "kind", "symbol", "amount", "cash_after", "recorded_at", "note"]
+# DECA credits 0.75%/yr interest on positive cash, posted Saturdays, and pays
+# dividends to cash. Neither is a trade, and both break reconciliation unless
+# recorded.
+CASH_EVENT_KINDS = ("interest", "dividend", "fee", "other")
+SPLIT_COLUMNS = ["effective", "symbol", "ratio", "recorded_at"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +135,210 @@ class LedgerStore:
     def equity_path(self) -> Path:
         return self.dir / "equity.csv"
 
+    @property
+    def risk_reviews_path(self) -> Path:
+        return self.dir / "risk_reviews.jsonl"
+
+    # -- stops -------------------------------------------------------------
+
+    def entry_stops(self) -> dict[str, Decimal | None]:
+        """The entry stop recorded on each position's lots. A position with
+        several lots uses the highest recorded stop, the most protective one."""
+        out: dict[str, Decimal | None] = {}
+        if not self.exists():
+            return out
+        for entry in self.load_book().get("positions", []):
+            stops = [Decimal(str(lot["stop"])) for lot in entry["lots"] if lot.get("stop")]
+            out[entry["symbol"]] = max(stops) if stops else None
+        return out
+
+    def set_stop(self, symbol: str, stop: Decimal) -> int:
+        """Record `stop` on every open lot of `symbol`. Returns lots updated."""
+        book = self.load_book()
+        updated = 0
+        for entry in book.get("positions", []):
+            if entry["symbol"] != symbol:
+                continue
+            for lot in entry["lots"]:
+                lot["stop"] = str(stop)
+                updated += 1
+        if updated:
+            self.save_book(book)
+        return updated
+
+    # -- drawdown reviews --------------------------------------------------
+
+    def risk_reviews(self) -> list[tuple[date, str]]:
+        if not self.risk_reviews_path.exists():
+            return []
+        out = []
+        for line in self.risk_reviews_path.read_text().splitlines():
+            if line.strip():
+                row = json.loads(line)
+                out.append((date.fromisoformat(row["session"]), row["note"]))
+        return out
+
+    def add_risk_review(self, session: date, note: str, recorded_at: str) -> None:
+        if not note.strip():
+            raise ValueError("a drawdown review needs the student's own note")
+        self.dir.mkdir(parents=True, exist_ok=True)
+        with self.risk_reviews_path.open("a") as fh:
+            fh.write(
+                json.dumps(
+                    {"session": session.isoformat(), "note": note, "recorded_at": recorded_at}
+                )
+                + "\n"
+            )
+
+    # -- cash events and splits --------------------------------------------
+
+    @property
+    def cash_events_path(self) -> Path:
+        return self.dir / "cash_events.csv"
+
+    @property
+    def splits_path(self) -> Path:
+        return self.dir / "splits.csv"
+
+    @staticmethod
+    def _rows(path: Path) -> list[dict[str, str]]:
+        if not path.exists():
+            return []
+        with path.open(newline="") as fh:
+            return list(csv.DictReader(fh))
+
+    def _append(self, path: Path, columns: list[str], row: dict[str, str]) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        new_file = not path.exists()
+        with path.open("a", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=columns)
+            if new_file:
+                writer.writeheader()
+            writer.writerow(row)
+
+    def cash_events(self) -> list[dict[str, str]]:
+        return self._rows(self.cash_events_path)
+
+    def add_cash_event(
+        self,
+        session: date,
+        kind: str,
+        amount: Decimal,
+        *,
+        symbol: str = "",
+        note: str = "",
+        recorded_at: str = "",
+    ) -> Decimal:
+        """Move cash without a trade. Returns the new cash balance."""
+        if kind not in CASH_EVENT_KINDS:
+            raise ValueError(f"kind must be one of {', '.join(CASH_EVENT_KINDS)}, got {kind!r}")
+        if amount == 0:
+            raise ValueError("a cash event of zero records nothing")
+        book = self.load_book()
+        cash = Decimal(str(book["cash"])) + amount
+        book["cash"] = str(cash)
+        self.save_book(book)
+        self._append(
+            self.cash_events_path,
+            CASH_EVENT_COLUMNS,
+            {
+                "session": session.isoformat(),
+                "kind": kind,
+                "symbol": symbol,
+                "amount": str(amount),
+                "cash_after": str(cash),
+                "recorded_at": recorded_at,
+                "note": note,
+            },
+        )
+        return cash
+
+    def splits(self) -> list[dict[str, str]]:
+        return self._rows(self.splits_path)
+
+    def apply_split(
+        self, symbol: str, ratio: Decimal, effective: date, *, recorded_at: str = ""
+    ) -> int:
+        """Restate every lot of `symbol` in post-split shares: quantity times
+        `ratio` (rounded down), cost per share and entry stop divided by it.
+        Returns lots updated; 0 when the symbol is not held."""
+        if ratio <= 0:
+            raise ValueError(f"split ratio must be positive, got {ratio}")
+        book = self.load_book()
+        updated = 0
+        for entry in book.get("positions", []):
+            if entry["symbol"] != symbol:
+                continue
+            for lot in entry["lots"]:
+                scaled = Decimal(lot["quantity"]) * ratio
+                lot["quantity"] = int(scaled.to_integral_value(rounding=ROUND_FLOOR))
+                lot["price"] = str(
+                    (Decimal(str(lot["price"])) / ratio).quantize(Decimal("0.000001"))
+                )
+                if lot.get("stop"):
+                    lot["stop"] = str((Decimal(str(lot["stop"])) / ratio).quantize(Decimal("0.01")))
+                updated += 1
+            entry["lots"] = [lot for lot in entry["lots"] if lot["quantity"] > 0]
+        if not updated:
+            return 0
+        book["positions"] = [e for e in book["positions"] if e["lots"]]
+        self.save_book(book)
+        self._append(
+            self.splits_path,
+            SPLIT_COLUMNS,
+            {
+                "effective": effective.isoformat(),
+                "symbol": symbol,
+                "ratio": str(ratio),
+                "recorded_at": recorded_at,
+            },
+        )
+        return updated
+
+    def adjusted_trades(self) -> list[dict[str, str]]:
+        """The trade log restated in post-split shares, the units the price
+        cache and the platform use once a split has happened. `trades.csv`
+        itself is never rewritten."""
+        rows = [dict(r) for r in self.trades()]
+        for split in self.splits():
+            effective = date.fromisoformat(split["effective"])
+            ratio = Decimal(split["ratio"])
+            for r in rows:
+                if r["symbol"] == split["symbol"] and date.fromisoformat(r["session"]) < effective:
+                    scaled = Decimal(r["quantity"]) * ratio
+                    r["quantity"] = str(int(scaled.to_integral_value(rounding=ROUND_FLOOR)))
+                    r["price"] = str(Decimal(r["price"]) / ratio)
+        return rows
+
+    # -- replay ------------------------------------------------------------
+
+    def holdings_at(self, session: date) -> tuple[Decimal, dict[str, int], dict[str, AssetClass]]:
+        """Cash and share counts after every trade and cash event recorded on
+        or before `session`, replayed from the starting cash. Used to backfill
+        an equity snapshot for a past session."""
+        book = self.load_book()
+        cash = Decimal(str(book["starting_cash"]))
+        for event in self.cash_events():
+            if date.fromisoformat(event["session"]) <= session:
+                cash += Decimal(event["amount"])
+        shares: dict[str, int] = {}
+        classes: dict[str, AssetClass] = {}
+        for row in self.adjusted_trades():
+            if date.fromisoformat(row["session"]) > session:
+                continue
+            qty = int(row["quantity"])
+            px = Decimal(row["price"])
+            comm = Decimal(row["commission"]) + Decimal(row.get("fees") or "0")
+            sym = row["symbol"]
+            classes[sym] = AssetClass(row["asset_class"])
+            if row["action"] == "buy":
+                cash -= px * qty + comm
+                shares[sym] = shares.get(sym, 0) + qty
+            else:
+                cash += px * qty - comm
+                shares[sym] = shares.get(sym, 0) - qty
+        return cash, {s: q for s, q in shares.items() if q}, classes
+
     # -- equity curve ------------------------------------------------------
 
     def record_equity(
@@ -174,7 +386,7 @@ class LedgerStore:
     def performance(self, account: AccountState) -> Performance:
         """Assemble the full performance picture from what is on disk."""
         book = self.load_book()
-        trips, commissions = round_trips_from_trades(self.trades())
+        trips, commissions = round_trips_from_trades(self.adjusted_trades())
         return Performance(
             starting_capital=Decimal(str(book.get("starting_cash", account.cash))),
             account=account,
@@ -341,16 +553,19 @@ class LedgerStore:
 
         L += ["## Open positions", ""]
         if perf.open_positions:
+            stops = self.entry_stops()
             L += [
                 "| Symbol | Class | Shares | Avg cost | Mark | Cost basis | Value | "
-                "Unrealised | Return | Days |",
-                "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+                "Unrealised | Return | Days | Entry stop |",
+                "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
             ]
             for p in perf.open_positions:
+                stop = stops.get(p.symbol)
                 L.append(
                     f"| {p.symbol} | {p.asset_class} | {p.quantity:,} | ${p.avg_cost:,.2f} | "
                     f"${p.mark:,.2f} | ${p.cost_basis:,.2f} | ${p.market_value:,.2f} | "
-                    f"${p.unrealized:,.2f} | {p.return_pct:+.2f}% | {p.days_held} |"
+                    f"${p.unrealized:,.2f} | {p.return_pct:+.2f}% | {p.days_held} | "
+                    f"{f'${stop:,.2f}' if stop is not None else '—'} |"
                 )
         else:
             L.append("None.")
@@ -433,6 +648,21 @@ class LedgerStore:
         else:
             L.append("No snapshots yet. Run `investlab snapshot` on each trading day.")
         L.append("")
+
+        events = self.cash_events()
+        if events:
+            L += [
+                "## Cash events (interest, dividends, fees)",
+                "",
+                "| Session | Kind | Symbol | Amount | Cash after |",
+                "|---|---|---|---:|---:|",
+            ]
+            for e in events:
+                L.append(
+                    f"| {e['session']} | {e['kind']} | {e['symbol'] or '—'} | "
+                    f"${Decimal(e['amount']):,.2f} | ${Decimal(e['cash_after']):,.2f} |"
+                )
+            L.append("")
 
         L += ["## All recorded trades", ""]
         rows = self.trades()

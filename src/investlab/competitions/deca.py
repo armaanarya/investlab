@@ -255,13 +255,21 @@ _PROHIBITION_REASON = (
 
 
 def _eligibility_reason(
-    instrument: Instrument, bar: Bar, prior_bar: Bar | None
+    instrument: Instrument,
+    bar: Bar,
+    prior_bar: Bar | None,
+    bitcoin_etfs_allowed: bool = False,
 ) -> tuple[bool, str, BlockReason | None]:
     """The single source of truth for eligibility. Check order is
     load-bearing: prohibition first (so a banned trust never reports a price
     or exchange problem instead of the prohibition), then exchange, then
-    price (today, then the day before), then market cap."""
-    if instrument.is_commodity_or_crypto_trust:
+    price (today, then the day before), then market cap.
+
+    A team ruling can lift the prohibition for spot bitcoin ETFs only. The
+    instrument then faces every other check like any ETF; commodity trusts
+    stay prohibited regardless."""
+    lifted = instrument.is_spot_bitcoin_etf and bitcoin_etfs_allowed
+    if instrument.is_commodity_or_crypto_trust and not lifted:
         return (
             False,
             _PROHIBITION_REASON.format(symbol=instrument.symbol),
@@ -330,6 +338,22 @@ class DecaProfile:
     name: str = "deca"
     starting_cash: Decimal = STARTING_CASH
     commission_per_trade: Decimal = COMMISSION_PER_TRADE
+    # Team ruling from configs/deca_rulings.json. False means the published
+    # ban on "bitcoin" applies as written.
+    bitcoin_etfs_allowed: bool = False
+    bitcoin_etf_decided_by: str = ""
+    bitcoin_etf_decided_on: date | None = None
+    bitcoin_etf_written_source: str | None = None
+
+    @classmethod
+    def from_rulings(cls, rulings: object) -> DecaProfile:
+        """Build the profile with the team's recorded rulings applied."""
+        return cls(
+            bitcoin_etfs_allowed=getattr(rulings, "bitcoin_etfs_allowed", False),
+            bitcoin_etf_decided_by=getattr(rulings, "bitcoin_etf_decided_by", ""),
+            bitcoin_etf_decided_on=getattr(rulings, "bitcoin_etf_decided_on", None),
+            bitcoin_etf_written_source=getattr(rulings, "bitcoin_etf_written_source", None),
+        )
 
     def is_eligible(
         self, instrument: Instrument, bar: Bar, prior_bar: Bar | None = None
@@ -340,7 +364,7 @@ class DecaProfile:
         supplies it. See the contract-defect note in the implementation
         report: the protocol's `is_eligible(instrument, bar)` cannot express
         a two-session rule with a single bar."""
-        ok, reason, _ = _eligibility_reason(instrument, bar, prior_bar)
+        ok, reason, _ = _eligibility_reason(instrument, bar, prior_bar, self.bitcoin_etfs_allowed)
         return ok, reason
 
     def eligibility_block(
@@ -349,7 +373,9 @@ class DecaProfile:
         """Same evaluation as `is_eligible`, packaged as a `BlockedOrder` for
         callers that need the structured `BlockReason` rather than just a
         boolean and a string. Returns None when eligible."""
-        ok, reason, block_reason = _eligibility_reason(instrument, bar, prior_bar)
+        ok, reason, block_reason = _eligibility_reason(
+            instrument, bar, prior_bar, self.bitcoin_etfs_allowed
+        )
         if ok:
             return None
         assert block_reason is not None  # every False branch sets one
@@ -540,7 +566,50 @@ class DecaProfile:
         checks.append(self._position_ceiling_check(account))
         checks.append(self._cash_and_margin_check(account, today))
         checks.append(self._sec_fee_rate_check())
+        checks.append(self._bitcoin_etf_ruling_check())
         return checks
+
+    def _bitcoin_etf_ruling_check(self) -> RuleCheck:
+        """Always satisfied, never silent. A ruling that lifts a published ban
+        without a written source is CONFLICTING and says so on every sheet."""
+        if not self.bitcoin_etfs_allowed:
+            return RuleCheck(
+                name="bitcoin_etf_ruling",
+                status=RuleStatus.VERIFIED,
+                satisfied=True,
+                detail=(
+                    "Spot bitcoin ETFs are blocked: the published DECA SMG guidelines "
+                    "list bitcoin and commodities as banned and no team ruling lifts it."
+                ),
+            )
+        decided = (
+            f"{self.bitcoin_etf_decided_by} on {self.bitcoin_etf_decided_on.isoformat()}"
+            if self.bitcoin_etf_decided_on
+            else self.bitcoin_etf_decided_by
+        )
+        if self.bitcoin_etf_written_source:
+            return RuleCheck(
+                name="bitcoin_etf_ruling",
+                status=RuleStatus.VERIFIED,
+                satisfied=True,
+                detail=(
+                    f"Spot bitcoin ETFs are eligible by team ruling ({decided}), "
+                    f"confirmed in writing: {self.bitcoin_etf_written_source}."
+                ),
+            )
+        return RuleCheck(
+            name="bitcoin_etf_ruling",
+            status=RuleStatus.CONFLICTING,
+            satisfied=True,
+            detail=(
+                f"Spot bitcoin ETFs are eligible by team ruling ({decided}). The "
+                "published DECA SMG guidelines list bitcoin and commodities as "
+                "banned, and no written confirmation is on file. A prohibited "
+                "trade can be invalidated after the fact and repeat violations "
+                "disqualify. Record SIFMA's or the Local Rules page's answer in "
+                "configs/deca_rulings.json (written_source) to verify it."
+            ),
+        )
 
     def _diversification_deadline_check(self, today: date) -> RuleCheck:
         if today <= DIVERSIFICATION_DEADLINE:

@@ -24,6 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_DIR = REPO_ROOT / "data_cache"
 DEFAULT_RUNS_DIR = REPO_ROOT / "runs"
 DEFAULT_JOURNAL_PATH = REPO_ROOT / "runs" / "journal.jsonl"
+DEFAULT_DECA_RULINGS = REPO_ROOT / "configs" / "deca_rulings.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +33,9 @@ class DataConfig:
     # Bars older than this many calendar days mark a run as stale rather than
     # failing it. A stale run still prints; it prints labeled.
     staleness_days: int = 4
-    providers: tuple[str, ...] = ("yfinance", "tiingo")
+    # Tried in order; each later provider is asked only for what the earlier
+    # ones missed. Alpaca and Tiingo are skipped when their keys are unset.
+    providers: tuple[str, ...] = ("yfinance", "alpaca", "tiingo")
     lookback_days: int = 400
 
 
@@ -56,6 +59,101 @@ class RiskConfig:
     drawdown_derisk: Decimal = Decimal("0.05")
     # Drawdown at which new entries halt pending a recorded review.
     drawdown_halt: Decimal = Decimal("0.10")
+
+
+@dataclass(frozen=True, slots=True)
+class DecaStrategyConfig:
+    """The DECA order-sheet algorithm's parameters. Strategy choices, not rules.
+
+    Rationale for each lives in `docs/STRATEGY.md`. Change them there and here
+    together, and re-run `investlab backtest` before trusting a new value.
+    """
+
+    # Entry stop sits this many ATR(14) below the signal close. Chosen over 2x
+    # on 30 rolling 12-week windows (docs/STRATEGY.md): 2x stopped most trades
+    # out on ordinary noise.
+    entry_atr_multiple: Decimal = Decimal("3")
+    # Trailing stop sits this many ATR(14) below the highest close since entry.
+    # Wider than the entry stop so a new position is not trailed out on noise.
+    trail_atr_multiple: Decimal = Decimal("5")
+    # The strategy's own cap on one position, under DECA's 30% rule. At 30% the
+    # risk budget put the book into three or four names and results swung with
+    # the start date; 15% spreads it across more.
+    max_position_weight: Decimal = Decimal("0.15")
+
+    # New buys need a cross-sectional score at or above this and a close above
+    # EMA50. Score is a 0-100 rank, not a probability.
+    entry_min_score: float = 60.0
+    entry_requires_above_ema50: bool = True
+
+    # A held position whose score falls below this while closing under EMA50
+    # has lost the signal it was bought on.
+    exit_score_below: float = 40.0
+    exit_decay_min_hold_sessions: int = 5
+
+    # Sessions after a sale before the same name (or exposure group) can be
+    # bought again. Stops churn at $5 a side.
+    reentry_cooldown_sessions: int = 10
+
+    # Orders smaller than this cost more than 0.25% in commission alone.
+    min_order_notional: Decimal = Decimal("2000")
+
+    # Block a new buy when earnings land between the signal close and this
+    # many sessions after the fill; warn on held names inside the shorter window.
+    earnings_block_sessions: int = 5
+    earnings_warn_sessions: int = 2
+
+    max_sector_weight: Decimal = Decimal("0.50")
+    max_candidates: int = 8
+
+    # The compliance legs buy this much above the $10,000 net-cost minimum, so
+    # a fund's NAV slipping between the signal close and the fill close cannot
+    # leave the class short.
+    compliance_buffer_fraction: Decimal = Decimal("0.02")
+    # Mutual fund for the compliance leg, in preference order. S&P 500 index
+    # funds first: DECA ranks against S&P 500 growth, so the forced $10,000
+    # tracks the benchmark rather than adding a bet.
+    compliance_mutual_funds: tuple[str, ...] = ("FXAIX", "VFIAX", "VTSAX")
+
+
+@dataclass(frozen=True, slots=True)
+class DecaRulings:
+    """Team rulings on questions the published DECA rules leave open or that
+    the team reads differently. Each carries who decided and on what basis,
+    and stays CONFLICTING until a written source is recorded."""
+
+    bitcoin_etfs_allowed: bool = False
+    bitcoin_etf_decided_by: str = ""
+    bitcoin_etf_decided_on: date | None = None
+    bitcoin_etf_basis: str = ""
+    bitcoin_etf_written_source: str | None = None
+
+
+def load_deca_rulings(path: Path = DEFAULT_DECA_RULINGS) -> DecaRulings:
+    """Read `configs/deca_rulings.json`. A missing file means no rulings: the
+    published text applies as written."""
+    if not path.exists():
+        return DecaRulings()
+    raw = json.loads(path.read_text())
+    btc = raw.get("bitcoin_etfs_allowed")
+    if btc is None:
+        return DecaRulings()
+    if not isinstance(btc.get("value"), bool):
+        raise ValueError(f"{path}: bitcoin_etfs_allowed.value must be true or false")
+    if btc["value"]:
+        missing = [k for k in ("decided_by", "decided_on", "basis") if not btc.get(k)]
+        if missing:
+            raise ValueError(
+                f"{path}: a ruling that lifts a published ban must record {', '.join(missing)}"
+            )
+    decided_on = btc.get("decided_on")
+    return DecaRulings(
+        bitcoin_etfs_allowed=btc["value"],
+        bitcoin_etf_decided_by=btc.get("decided_by", ""),
+        bitcoin_etf_decided_on=date.fromisoformat(decided_on) if decided_on else None,
+        bitcoin_etf_basis=btc.get("basis", ""),
+        bitcoin_etf_written_source=btc.get("written_source") or None,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +199,7 @@ class DecaConfig:
             aggregate_open_risk_fraction=Decimal("0.12"),
         )
     )
+    strategy: DecaStrategyConfig = field(default_factory=DecaStrategyConfig)
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,9 +307,22 @@ def load_wharton_season(path: Path) -> WhartonConfig:
     return WhartonConfig(**{k: v for k, v in raw.items() if k in known})
 
 
+CACHE_DIR_ENV = "INVESTLAB_CACHE_DIR"
+
+
 def load(wharton_season_path: Path | None = None) -> AppConfig:
-    """Build the application config, upgrading Wharton if its season file exists."""
-    cfg = AppConfig()
+    """Build the application config, upgrading Wharton if its season file exists.
+
+    `INVESTLAB_CACHE_DIR` points the price cache somewhere else, which is how
+    the test suite keeps its synthetic bars out of the real cache.
+    """
+    import os
+
+    cache_override = os.environ.get(CACHE_DIR_ENV)
+    if cache_override:
+        cfg = AppConfig(data=DataConfig(cache_dir=Path(cache_override)))
+    else:
+        cfg = AppConfig()
     if wharton_season_path is not None and wharton_season_path.exists():
         return AppConfig(
             data=cfg.data,
