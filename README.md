@@ -78,6 +78,29 @@ morning. That matters because of a timing difference between the two games:
 A morning run gives you the whole school day to enter DECA orders before the
 4:00 p.m. deadline.
 
+## Research sources
+
+The order sheet is one of three inputs to each morning's plan:
+
+- **investlab**: universe, eligibility, rules, sizing, ledger. It decides the
+  share counts.
+- **Alpaca** (read-only): consolidated quotes and daily bars, corporate
+  actions, market calendar, news. Used to check the sheet's prices and events
+  against the market. Never used to place an order, paper or live.
+- **[Finviz](https://finviz.com)**: next earnings date, sector and industry,
+  valuation, analyst, insider and short-interest figures, news, one quote page
+  per ticker. Its quotes are delayed, so it is never a price source for sizing.
+
+The agent running the morning routine checks every proposed order and every
+held position against Alpaca and Finviz and reports what it finds as facts and
+flags: earnings inside the holding window, a price that has moved away from the
+sheet's estimate, a pending split or dividend, sector concentration, a position
+at its stop reference. See [AGENTS.md](AGENTS.md) for the full routine.
+
+**`daily` does not propose sells yet.** It sizes new buys only. Until exit rules
+are built, the morning report shows each held position against its entry stop
+reference so a position going wrong is visible.
+
 ## Repository layout
 
 ```

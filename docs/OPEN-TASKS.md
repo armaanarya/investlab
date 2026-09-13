@@ -1,6 +1,6 @@
 # Open tasks
 
-Last updated 2026-09-07.
+Last updated 2026-09-12.
 
 What is built, what is not, and what only a human with a competition login can
 do. Anything marked **BLOCKED** cannot be started until someone supplies
@@ -31,7 +31,9 @@ Key dates, for context on urgency:
 - Wharton rules engine: season state machine, trade budget, commission drag
 - Candidate screen and the daily order sheet
 - Hash-chained journal with evidence export
-- Weekday 6:30 a.m. Pacific scheduled task
+- Weekday 6:30 a.m. Pacific morning routine, run by Codex from `AGENTS.md`
+  (moved off the local Claude scheduled task on 2026-09-12)
+- First DECA fills recorded 2026-09-11; ledger matches the platform to the cent
 
 ---
 
@@ -223,7 +225,26 @@ end up in a submission gets cited in APA like any other source.
 ## Shared
 
 - [ ] **Exit rules.** Neither profile proposes exits yet. This is the largest
-      functional gap in the daily loop.
+      functional gap in the daily loop, and it went live on 2026-09-11 with
+      three open positions. Until it is built, `AGENTS.md` has the agent
+      report held positions against their entry stop references by hand.
+- [ ] **Store the stop reference on the lot.** `fill` takes no stop, so the
+      protective level from the sheet is lost the moment a trade is recorded.
+      It lives in a table in `AGENTS.md` for now. Add `--stop` to `fill`,
+      persist it in `portfolio.json`, and show it in `LEDGER.md`.
+- [ ] **Earnings-date check in the screen.** The first sheet proposed ORCL
+      from the Sept 10 close; ORCL reported that evening (Finviz: "Sep 10
+      AMC") and filled about 7% below the estimate. Block or flag candidates
+      with earnings between the data close and the expected holding window.
+      Source is open: Alpaca does not obviously provide it, Finviz free pages
+      must not be scraped, and yfinance's calendar is unreliable.
+- [ ] **Alpaca as a data provider.** Add it to the provider chain next to
+      yfinance and Tiingo: SIP daily bars, corporate actions, calendar.
+      Read-only API keys from environment variables; tests with no network.
+      It will not cover mutual funds, so yfinance stays for that leg.
+- [ ] **Research step in the daily loop.** The agent currently checks each
+      sheet against Alpaca and Finviz by hand (see `AGENTS.md`). Anything it
+      flags repeatedly belongs in code.
 - [ ] **Refresh universe metadata.** Exchanges and market caps were resolved
       from vendor metadata on 2026-09-07 and are baked into
       `data/universe.py`. There is no refresh command yet; a stale market cap
