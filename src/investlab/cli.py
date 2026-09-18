@@ -40,7 +40,7 @@ from investlab.store import LedgerStore
 
 app = typer.Typer(
     add_completion=False,
-    help="Decision support for the DECA Stock Market Game (and, research-only, Wharton WInS).",
+    help="Decision support for the DECA Stock Market Game and Wharton WInS.",
 )
 data_app = typer.Typer(help="Fetch and inspect the local price cache.")
 app.add_typer(data_app, name="data")
@@ -50,6 +50,9 @@ earnings_app = typer.Typer(help="Earnings dates that gate new buys and flag held
 app.add_typer(earnings_app, name="earnings")
 stop_app = typer.Typer(help="Entry stops recorded on held positions.")
 app.add_typer(stop_app, name="stop")
+from investlab.cli_wharton import wharton_app  # noqa: E402
+
+app.add_typer(wharton_app, name="wharton")
 
 console = Console()
 err = Console(stderr=True)
@@ -157,12 +160,11 @@ def _load_profile(name: str, cfg: cfg_mod.AppConfig) -> Any:
             raise typer.Exit(EXIT_BAD_CONFIG) from exc
         return DecaProfile.from_rulings(rulings)
     if name == "wharton":
-        try:
-            from investlab.competitions.wharton import WhartonProfile
-        except ImportError as exc:
-            console.print(f"[red]Wharton profile unavailable:[/red] {exc}")
-            raise typer.Exit(EXIT_BAD_CONFIG) from exc
-        return WhartonProfile()
+        from investlab.competitions.wharton import TradeBudget, WhartonProfile
+
+        store = _store("wharton")
+        used = len(store.trades()) if store.exists() else 0
+        return WhartonProfile().with_trade_budget(TradeBudget(trades_used=used))
     console.print(f"[red]Unknown profile[/red] {name!r}. Use 'deca' or 'wharton'.")
     raise typer.Exit(EXIT_BAD_CONFIG)
 
@@ -315,12 +317,23 @@ def doctor() -> None:
     upcoming = [e for e in EarningsCalendar().events() if e.date >= today_et()]
     t.add_row("Earnings calendar", "ok" if upcoming else "empty", f"{len(upcoming)} upcoming dates")
 
+    w = cfg.wharton
+    upcoming_w = [
+        (d, label)
+        for d, label in (
+            (w.trading_start, "trading opens"),
+            (w.roster_deadline, "team roster due"),
+            (w.notes_analysis_deadline, "Trading Notes Analysis due"),
+            (w.trading_end, "IPS due, trading ends"),
+            (w.final_report_deadline, "Final Report due"),
+        )
+        if d >= today_et()
+    ]
     t.add_row(
         "Wharton",
-        "unverified" if not cfg.wharton.season_verified else "ready",
-        f"materials release {cfg.wharton.materials_release}"
-        if not cfg.wharton.season_verified
-        else f"${cfg.wharton.starting_cash:,} start",
+        "ready",
+        f"${w.starting_cash:,} start"
+        + (f"; next: {upcoming_w[0][1]} {upcoming_w[0][0]}" if upcoming_w else "; season over"),
     )
 
     days = (cfg.deca.diversification_deadline - today_et()).days
@@ -358,6 +371,10 @@ def data_pull(
     # growth; holding the index is how you guarantee you match the thing you
     # need to beat.
     wanted += [b for b in BENCHMARK_CANDIDATES if b not in wanted]
+    if not symbols:
+        from investlab.cli_wharton import wharton_symbols
+
+        wanted += [s for s in wharton_symbols() if s not in wanted]
     end = today_et()
     start = end - timedelta(days=days)
 
@@ -558,9 +575,9 @@ def daily(
     the morning; every order fills at the session's close."""
     if profile != "deca":
         console.print(
-            "[yellow]The order sheet is built for DECA only.[/yellow] Wharton stays "
-            "research-only until its 2026-27 season config exists; see "
-            "`investlab rules --profile wharton`."
+            "[yellow]The order sheet is built for DECA only.[/yellow] For Wharton, "
+            "run `investlab wharton plan` (allocation orders) and "
+            "`investlab wharton project` (Laura's projections)."
         )
         raise typer.Exit(EXIT_RULE_UNRESOLVED)
 

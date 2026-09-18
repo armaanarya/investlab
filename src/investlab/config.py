@@ -5,8 +5,7 @@ deliberately different risk postures. Every number that differs between them
 lives here, in one file, so a value is never hard-coded in a strategy and never
 silently shared between profiles that should not share it.
 
-Wharton's 2026-27 starting capital is unknown until 2026-09-15. It is therefore
-a config value with a labeled provisional default, never a constant.
+Wharton's 2026-27 values come from the materials published 2026-09-15.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 ProfileName = Literal["deca", "wharton"]
 
@@ -204,18 +203,13 @@ class DecaConfig:
 
 @dataclass(frozen=True, slots=True)
 class WhartonConfig:
-    """Wharton WInS.
+    """Wharton WInS, 2026-27. Every value is from the materials published
+    2026-09-15; see docs/rules/wharton-verified.md. The rules engine itself is
+    `competitions/wharton.py`; this mirrors the numbers the CLI needs."""
 
-    `season_verified` is False until the 2026-27 materials land on 2026-09-15.
-    While False, every value below is last season's and the tool refuses to
-    emit an actionable order sheet.
-    """
-
-    season_verified: bool = False
-    # Provisional. 2025-26 was $500,000. The $100,000 figure that appears in
-    # StockTrak's own boilerplate FAQ and across secondary sites is wrong for
-    # this competition.
-    starting_cash: Decimal = Decimal(500000)
+    season_verified: bool = True
+    # $300,000. Last season was $500,000; StockTrak's boilerplate says $100,000.
+    starting_cash: Decimal = Decimal(300000)
     commission_per_trade: Decimal = Decimal(25)
     commission_per_bond: Decimal = Decimal(10)
     min_price: Decimal = Decimal(5)
@@ -223,28 +217,20 @@ class WhartonConfig:
     materials_release: date = date(2026, 9, 15)
     trading_start: date = date(2026, 9, 28)
     roster_deadline: date = date(2026, 10, 9)
+    notes_analysis_deadline: date = date(2026, 10, 23)
     ips_deadline: date = date(2026, 11, 6)
+    # Same day as the IPS: the portfolio freezes.
+    trading_end: date = date(2026, 11, 6)
+    final_report_instructions: date = date(2026, 11, 9)
     final_report_deadline: date = date(2026, 12, 4)
 
     hard_trade_cap: int = 200
-    # Self-imposed, well under the cap. At $25 a trade this holds commission
-    # drag near 0.2% of a $500k book, and Wharton tells teams outright that
-    # this is not a trading game.
+    # Self-imposed, well under the cap. Wharton says it "does not require
+    # frequent or same-day trading" and judges the strategy, not activity.
     trade_budget: int = 40
 
-    approved_etfs: tuple[str, ...] = ()
     allow_margin: bool = False
     allow_shorting: bool = False
-
-    risk: RiskConfig = field(
-        default_factory=lambda: RiskConfig(
-            risk_fraction_per_trade=Decimal("0.005"),
-            max_positions=15,
-            position_ceiling_fraction=Decimal("0.15"),
-            cash_floor_fraction=Decimal("0.05"),
-            aggregate_open_risk_fraction=Decimal("0.04"),
-        )
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,62 +242,11 @@ class AppConfig:
     runs_dir: Path = DEFAULT_RUNS_DIR
 
 
-def _decimalize(raw: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
-    """Money arrives from JSON as str or float; every one becomes Decimal.
-
-    Constructing Decimal from a float would carry binary rounding error into
-    the ledger, so values are stringified first.
-    """
-    out = dict(raw)
-    for key in keys:
-        if key in out and out[key] is not None:
-            out[key] = Decimal(str(out[key]))
-    return out
-
-
-def load_wharton_season(path: Path) -> WhartonConfig:
-    """Load the 2026-27 Wharton values once they are published on Sept 15.
-
-    Expects JSON with at least `starting_cash` and `approved_etfs`. Supplying
-    those is what flips the profile out of its unverified state, so the loader
-    validates rather than trusting.
-    """
-    if not path.exists():
-        raise FileNotFoundError(
-            f"No Wharton season config at {path}. "
-            "The 2026-27 materials release 2026-09-15 via SurveyMonkey Apply; "
-            "until then the Wharton profile stays unverified and will not "
-            "emit an order sheet."
-        )
-
-    raw = json.loads(path.read_text())
-    missing = [k for k in ("starting_cash", "approved_etfs") if k not in raw]
-    if missing:
-        raise ValueError(
-            f"Wharton season config at {path} is missing {', '.join(missing)}. "
-            "Both are required to mark the season verified."
-        )
-    if not raw["approved_etfs"]:
-        raise ValueError(
-            "approved_etfs is empty. Wharton requires holding at least one ETF "
-            "from its Approved List, so an empty list cannot be correct. Copy "
-            "the list from the 2026-27 materials."
-        )
-
-    money_keys = ("starting_cash", "commission_per_trade", "commission_per_bond", "min_price")
-    raw = _decimalize(raw, money_keys)
-    raw["approved_etfs"] = tuple(str(t).upper() for t in raw["approved_etfs"])
-    raw["season_verified"] = True
-
-    known = {f for f in WhartonConfig.__dataclass_fields__}
-    return WhartonConfig(**{k: v for k, v in raw.items() if k in known})
-
-
 CACHE_DIR_ENV = "INVESTLAB_CACHE_DIR"
 
 
-def load(wharton_season_path: Path | None = None) -> AppConfig:
-    """Build the application config, upgrading Wharton if its season file exists.
+def load() -> AppConfig:
+    """Build the application config.
 
     `INVESTLAB_CACHE_DIR` points the price cache somewhere else, which is how
     the test suite keeps its synthetic bars out of the real cache.
@@ -323,12 +258,4 @@ def load(wharton_season_path: Path | None = None) -> AppConfig:
         cfg = AppConfig(data=DataConfig(cache_dir=Path(cache_override)))
     else:
         cfg = AppConfig()
-    if wharton_season_path is not None and wharton_season_path.exists():
-        return AppConfig(
-            data=cfg.data,
-            deca=cfg.deca,
-            wharton=load_wharton_season(wharton_season_path),
-            journal_path=cfg.journal_path,
-            runs_dir=cfg.runs_dir,
-        )
     return cfg

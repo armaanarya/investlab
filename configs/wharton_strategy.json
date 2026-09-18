@@ -1,0 +1,70 @@
+{
+  "status": "DRAFT. Three candidate strategies for the team to compare, change and own. Every return and volatility below is a placeholder: replace each with a figure from a source you cite in the Final Report (for example a published long-term capital market assumptions report) and change its 'source'.",
+  "inflation": 0.025,
+  "sleeves": {
+    "us_equity": {"expected_return": 0.065, "volatility": 0.16, "source": "placeholder"},
+    "intl_equity": {"expected_return": 0.07, "volatility": 0.17, "source": "placeholder"},
+    "treasury_ladder": {"expected_return": 0.04, "volatility": 0.03, "source": "placeholder: roughly the yield on 2032-2035 Treasuries held to maturity"},
+    "intermediate_treasury": {"expected_return": 0.04, "volatility": 0.05, "source": "placeholder"},
+    "tips": {"expected_return": 0.042, "volatility": 0.055, "source": "placeholder"},
+    "cash_tbills": {"expected_return": 0.035, "volatility": 0.01, "source": "placeholder"}
+  },
+  "correlations": {
+    "us_equity|intl_equity": 0.8,
+    "treasury_ladder|intermediate_treasury": 0.9,
+    "treasury_ladder|tips": 0.7,
+    "intermediate_treasury|tips": 0.7,
+    "us_equity|tips": 0.1,
+    "intl_equity|tips": 0.1
+  },
+  "strategies": {
+    "match_then_grow": {
+      "phases": [
+        {"from": 2027, "to": 2030, "weights": {"treasury_ladder": 0.45, "us_equity": 0.35, "intl_equity": 0.15, "cash_tbills": 0.05}},
+        {"from": 2031, "to": 2032, "weights": {"treasury_ladder": 0.60, "us_equity": 0.25, "intl_equity": 0.10, "cash_tbills": 0.05}}
+      ],
+      "reserve": {"method": "pv", "discount_rate": 0.04, "expected_return": 0.04, "volatility": 0.0, "note": "A ladder of Treasuries held to maturity pays known amounts, so its volatility for funding purposes is zero. The risk that remains is the yield you lock in: change discount_rate to the actual yields when you buy."},
+      "flexibility_buffer": {"fraction_of_remainder": 0.20}
+    },
+    "balanced_glide": {
+      "phases": [
+        {"from": 2027, "to": 2030, "weights": {"us_equity": 0.40, "intl_equity": 0.20, "intermediate_treasury": 0.30, "tips": 0.10}},
+        {"from": 2031, "to": 2032, "weights": {"us_equity": 0.25, "intl_equity": 0.10, "intermediate_treasury": 0.50, "tips": 0.15}}
+      ],
+      "reserve": {"method": "confidence", "confidence": 0.95, "expected_return": 0.04, "volatility": 0.05},
+      "flexibility_buffer": {"fraction_of_remainder": 0.20}
+    },
+    "growth_then_derisk": {
+      "phases": [
+        {"from": 2027, "to": 2030, "weights": {"us_equity": 0.60, "intl_equity": 0.30, "intermediate_treasury": 0.10}},
+        {"from": 2031, "to": 2032, "weights": {"us_equity": 0.30, "intl_equity": 0.15, "intermediate_treasury": 0.45, "cash_tbills": 0.10}}
+      ],
+      "reserve": {"method": "confidence", "confidence": 0.95, "expected_return": 0.045, "volatility": 0.08},
+      "flexibility_buffer": {"fraction_of_remainder": 0.20}
+    }
+  },
+  "active": "match_then_grow",
+  "wins": {
+    "rebalance_band": 0.05,
+    "note": "WInS targets are the first phase of the active strategy. The ladder rungs are iBonds term Treasury ETFs maturing each December, which fund the next January's payment. Rungs for 2036-2042 are best bought as actual U.S. Treasuries on WInS ($10 commission); the tool cannot price those, so record them with --asset-class bond.",
+    "holdings": {
+      "treasury_ladder": {"IBTM": 0.25, "IBTO": 0.25, "IBTP": 0.25, "IBTQ": 0.25},
+      "us_equity": {"VTI": 1.0},
+      "intl_equity": {"VXUS": 1.0},
+      "intermediate_treasury": {"VGIT": 1.0},
+      "tips": {"SCHP": 1.0},
+      "cash_tbills": {"SGOV": 1.0}
+    },
+    "instruments": {
+      "IBTM": {"name": "iShares iBonds Dec 2032 Term Treasury ETF", "exchange": "NASDAQ"},
+      "IBTO": {"name": "iShares iBonds Dec 2033 Term Treasury ETF", "exchange": "NASDAQ"},
+      "IBTP": {"name": "iShares iBonds Dec 2034 Term Treasury ETF", "exchange": "NASDAQ"},
+      "IBTQ": {"name": "iShares iBonds Dec 2035 Term Treasury ETF", "exchange": "NASDAQ"},
+      "VTI": {"name": "Vanguard Total Stock Market ETF", "exchange": "NYSEARCA"},
+      "VXUS": {"name": "Vanguard Total International Stock ETF", "exchange": "NASDAQ"},
+      "VGIT": {"name": "Vanguard Intermediate-Term Treasury ETF", "exchange": "NASDAQ"},
+      "SCHP": {"name": "Schwab U.S. TIPS ETF", "exchange": "NYSEARCA"},
+      "SGOV": {"name": "iShares 0-3 Month Treasury Bond ETF", "exchange": "NYSEARCA"}
+    }
+  }
+}

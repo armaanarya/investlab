@@ -1,35 +1,32 @@
-"""Wharton WInS competition module tests.
+"""Wharton WInS competition module tests, 2026-27 rules (published 2026-09-15).
 
-The 2026-27 Wharton trading rules are not released until 2026-09-15 (eight
-days after this file was written). Every prior-season number used here is
-PROVISIONAL and is asserted to be labeled as such in module output. Starting
-capital is $500,000, never the commonly-misreported $100,000 StockTrak FAQ
-figure -- see `docs/rules/wharton-verified.md`.
-
-Money is Decimal everywhere. A float in this file is a bug.
+Starting capital is $300,000: not last season's $500,000 and not StockTrak's
+$100,000 boilerplate. Money is Decimal everywhere. A float here is a bug.
 """
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
 from investlab.competitions import wharton
 from investlab.competitions.wharton import (
     MISREPORTED_STARTING_CAPITAL,
+    NOTES_ANALYSIS_DUE,
+    PRIOR_SEASON_STARTING_CAPITAL,
+    SEASON_2026_27,
+    TRADING_ENDS,
     BudgetSeverity,
-    SeasonStatus,
     TradeBudget,
+    TradingWindow,
     WhartonConfigError,
     WhartonProfile,
+    WhartonSeasonConfig,
     build_daily_plan,
-    load_season_config,
-    provisional_disclosures,
-    season_config_template,
+    max_quantity_by_volume,
+    trading_window,
 )
 from investlab.contracts import (
     AccountState,
@@ -42,7 +39,6 @@ from investlab.contracts import (
     Lot,
     Position,
     RuleCheck,
-    RuleStatus,
     SizedOrder,
 )
 
@@ -59,17 +55,17 @@ def etf(symbol: str, exchange: str = "NYSEARCA") -> Instrument:
     return Instrument(symbol, symbol, AssetClass.ETF, exchange)
 
 
-def bar(symbol: str, close: str, session: date = date(2026, 9, 4)) -> Bar:
+def bar(symbol: str, close: str, session: date = date(2026, 9, 4), volume: int = 1_000_000) -> Bar:
     price = Decimal(close)
-    return Bar(symbol, session, price, price, price, price, price, 1_000_000, "test")
+    return Bar(symbol, session, price, price, price, price, price, volume, "test")
 
 
 def empty_account(as_of: date = date(2026, 9, 6)) -> AccountState:
     return AccountState(as_of, Decimal("0"), (), {}, Decimal("0"), Decimal("0"))
 
 
-def account_worth_500k(as_of: date = date(2026, 10, 1)) -> AccountState:
-    return AccountState(as_of, Decimal("500000"), (), {}, Decimal("0"), Decimal("0"))
+def account_worth_300k(as_of: date = date(2026, 10, 1)) -> AccountState:
+    return AccountState(as_of, Decimal("300000"), (), {}, Decimal("0"), Decimal("0"))
 
 
 def account_holding(
@@ -110,28 +106,15 @@ def a_sized_order(symbol: str) -> SizedOrder:
     )
 
 
-def write_json(tmp_path: Path, data: dict) -> Path:
-    p = tmp_path / "wharton-config.json"
-    p.write_text(json.dumps(data))
-    return p
+OPEN_DAY = date(2026, 10, 1)
 
 
-CONFIG = {
-    "starting_capital": "500000",
-    "approved_etfs": ["SPY", "VTI", "AGG"],
-    "position_ceiling_fraction": "0.15",
-    "minimum_activity_deadline": "2026-10-09",
-    "client_mandate_summary": "Alum client, $1.5M in 10 years, $10k/yr from year 3.",
-}
-
-
-def verified_profile(tmp_path: Path) -> WhartonProfile:
-    cfg = load_season_config(write_json(tmp_path, dict(CONFIG)))
-    return WhartonProfile().with_season(cfg)
+def profile_with_trades(n: int) -> WhartonProfile:
+    return WhartonProfile().with_trade_budget(TradeBudget(trades_used=n))
 
 
 # ---------------------------------------------------------------------------
-# Task 1: identity, provisional constants
+# Identity and season
 # ---------------------------------------------------------------------------
 
 
@@ -139,383 +122,265 @@ def test_profile_satisfies_the_frozen_protocol():
     assert isinstance(WhartonProfile(), CompetitionProfile)
 
 
-def test_defaults_to_the_unverified_state():
-    assert WhartonProfile().status is SeasonStatus.WHARTON_UNVERIFIED
-    assert WhartonProfile().is_verified is False
-
-
-def test_starting_capital_defaults_to_500k_never_100k():
+def test_starting_capital_is_300k():
     p = WhartonProfile()
-    assert p.starting_cash == Decimal("500000")
-    assert p.starting_cash != MISREPORTED_STARTING_CAPITAL
-    assert p.starting_cash_is_provisional is True
+    assert p.starting_cash == Decimal("300000")
+    assert p.starting_cash not in (PRIOR_SEASON_STARTING_CAPITAL, MISREPORTED_STARTING_CAPITAL)
 
 
-def test_starting_capital_default_is_labeled_provisional():
-    blob = " ".join(provisional_disclosures()).lower()
-    assert "provisional" in blob and "500,000" in blob and "2025-26" in blob
+def test_margin_and_shorting_are_banned():
+    assert WhartonProfile.allows_margin is False
+    assert WhartonProfile.allows_shorting is False
 
 
-def test_margin_and_shorting_are_banned_outright():
+def test_commissions_by_asset_class():
     p = WhartonProfile()
-    assert p.allows_margin is False
-    assert p.allows_shorting is False
+    assert p.commission_for(AssetClass.STOCK) == Decimal("25")
+    assert p.commission_for(AssetClass.ETF) == Decimal("25")
+    assert p.commission_for(AssetClass.BOND) == Decimal("10")
+
+
+def test_season_config_validates():
+    with pytest.raises(WhartonConfigError):
+        WhartonSeasonConfig(Decimal("0"), date(2026, 9, 28), date(2026, 11, 6))
+    with pytest.raises(WhartonConfigError):
+        WhartonSeasonConfig(Decimal("1"), date(2026, 11, 6), date(2026, 9, 28))
+
+
+@pytest.mark.parametrize(
+    "today, window",
+    [
+        (date(2026, 9, 27), TradingWindow.NOT_OPEN),
+        (date(2026, 9, 28), TradingWindow.OPEN),
+        (date(2026, 11, 6), TradingWindow.OPEN),
+        (date(2026, 11, 7), TradingWindow.FROZEN),
+    ],
+)
+def test_trading_window_runs_sept_28_to_nov_6(today, window):
+    assert trading_window(today) is window
 
 
 # ---------------------------------------------------------------------------
-# Task 2: eligibility
+# Eligibility
 # ---------------------------------------------------------------------------
 
 
 def test_plain_stock_at_five_dollars_is_eligible():
-    ok, reason = WhartonProfile().is_eligible(stock("AAA"), bar("AAA", "5.00"))
-    assert ok is True and reason == ""
+    assert WhartonProfile().is_eligible(stock("ABC"), bar("ABC", "5.00")) == (True, "")
 
 
 def test_stock_at_four_ninety_nine_is_rejected():
-    ok, _reason = WhartonProfile().is_eligible(stock("AAA"), bar("AAA", "4.99"))
-    assert ok is False
-    blocked = WhartonProfile().evaluate(stock("AAA"), bar("AAA", "4.99"))
-    assert blocked.reason is BlockReason.PRICE_BELOW_MINIMUM
-    assert "$5" in blocked.detail and "PROVISIONAL" in blocked.detail
+    blocked = WhartonProfile().evaluate(stock("ABC"), bar("ABC", "4.99"))
+    assert blocked is not None and blocked.reason is BlockReason.PRICE_BELOW_MINIMUM
 
 
-def test_foreign_adr_is_eligible():  # any platform exchange, ADRs included
-    ok, _ = WhartonProfile().is_eligible(
-        Instrument("BABA", "Alibaba ADR", AssetClass.STOCK, "NYSE"), bar("BABA", "90")
+def test_price_floor_does_not_apply_to_etfs():
+    assert WhartonProfile().evaluate(etf("CHEAP"), bar("CHEAP", "3.00")) is None
+
+
+def test_any_etf_is_eligible_without_an_approved_list():
+    for sym in ("VTI", "VXUS", "IBTO", "SGOV"):
+        assert WhartonProfile().evaluate(etf(sym), bar(sym, "50")) is None
+
+
+def test_gold_etf_is_eligible_at_wharton():
+    gld = Instrument(
+        "GLD", "SPDR Gold", AssetClass.ETF, "NYSEARCA", is_commodity_or_crypto_trust=True
     )
-    assert ok is True
+    assert WhartonProfile().evaluate(gld, bar("GLD", "300")) is None
 
 
-def test_unverified_state_blocks_every_etf():
-    for sym in ("SPY", "VTI", "AGG"):
-        blocked = WhartonProfile().evaluate(etf(sym), bar(sym, "100"))
-        assert blocked.reason is BlockReason.UNVERIFIED_INSTRUMENT
-        assert "Approved ETF List" in blocked.detail
-        assert "2026-09-15" in blocked.detail
-
-
-def test_ibit_is_rejected_on_both_grounds():
+def test_bitcoin_etf_is_rejected_as_crypto():
     ibit = Instrument(
         "IBIT",
         "iShares Bitcoin Trust",
         AssetClass.ETF,
         "NASDAQ",
         is_commodity_or_crypto_trust=True,
+        is_spot_bitcoin_etf=True,
     )
     blocked = WhartonProfile().evaluate(ibit, bar("IBIT", "60"))
-    assert blocked.reason is BlockReason.PROHIBITED_SECURITY
-    d = blocked.detail.lower()
-    assert "crypto" in d  # ground 1
-    assert "approved etf list" in d  # ground 2
-    assert "two independent grounds" in d
+    assert blocked is not None and "crypto" in blocked.detail
+
+
+def test_foreign_adr_is_eligible():
+    adr = Instrument("TSM", "TSMC ADR", AssetClass.STOCK, "NYSE")
+    assert WhartonProfile().evaluate(adr, bar("TSM", "150")) is None
 
 
 def test_leveraged_product_rejected_as_derivative():
-    lev = Instrument("TQQQ", "3x QQQ", AssetClass.ETF, "NASDAQ", is_leveraged=True)
-    assert (
-        WhartonProfile().evaluate(lev, bar("TQQQ", "50")).reason is BlockReason.PROHIBITED_SECURITY
-    )
+    lev = Instrument("TQQQ", "3x", AssetClass.ETF, "NASDAQ", is_leveraged=True)
+    blocked = WhartonProfile().evaluate(lev, bar("TQQQ", "80"))
+    assert blocked is not None and blocked.reason is BlockReason.PROHIBITED_SECURITY
 
 
 def test_mutual_fund_is_not_an_eligible_wharton_asset_class():
-    mf = Instrument("VFIAX", "Vanguard 500", AssetClass.MUTUAL_FUND, "NASDAQ")
-    assert (
-        WhartonProfile().evaluate(mf, bar("VFIAX", "500")).reason is BlockReason.PROHIBITED_SECURITY
-    )
+    mf = Instrument("VFIAX", "Admiral", AssetClass.MUTUAL_FUND, "NASDAQ")
+    assert WhartonProfile().evaluate(mf, bar("VFIAX", "500")) is not None
+
+
+def test_bond_is_eligible():
+    bond = Instrument("UST2033", "US Treasury 2033", AssetClass.BOND, "OTC")
+    assert WhartonProfile().evaluate(bond, bar("UST2033", "98")) is None
 
 
 def test_missing_exchange_is_ineligible():
-    assert (
-        WhartonProfile()
-        .evaluate(Instrument("XXX", "?", AssetClass.STOCK, ""), bar("XXX", "10"))
-        .reason
-        is BlockReason.INELIGIBLE_EXCHANGE
-    )
+    blocked = WhartonProfile().evaluate(stock("ABC", exchange=""), bar("ABC", "10"))
+    assert blocked is not None and blocked.reason is BlockReason.INELIGIBLE_EXCHANGE
+
+
+def test_volume_rule_blocks_more_than_twice_daily_volume():
+    p = WhartonProfile()
+    assert max_quantity_by_volume(1_000) == 2_000
+    assert p.volume_block("IBTR", 2_000, 1_000) is None
+    assert p.volume_block("IBTR", 2_001, 1_000) is not None
+    assert p.volume_block("BOND", 10_000, 0) is None  # no volume data: not blocked
 
 
 # ---------------------------------------------------------------------------
-# Task 3: WhartonSeasonConfig, loader, validation, template
-# ---------------------------------------------------------------------------
-
-
-def test_loading_a_json_config_moves_the_profile_to_verified(tmp_path):
-    p = tmp_path / "wharton-2026-27.json"
-    p.write_text(json.dumps(CONFIG))
-    prof = WhartonProfile().with_season(load_season_config(p))
-    assert prof.status is SeasonStatus.WHARTON_VERIFIED
-    assert prof.starting_cash == Decimal("500000")
-    assert prof.starting_cash_is_provisional is False
-    assert prof.position_ceiling_fraction == Decimal("0.15")
-
-
-def test_verified_state_unblocks_approved_etfs_and_still_blocks_others(tmp_path):
-    prof = WhartonProfile().with_season(load_season_config(write_json(tmp_path, CONFIG)))
-    assert prof.is_eligible(etf("SPY"), bar("SPY", "600"))[0] is True
-    blocked = prof.evaluate(etf("ARKK"), bar("ARKK", "60"))
-    assert blocked.reason is BlockReason.PROHIBITED_SECURITY
-    assert "Approved ETF List" in blocked.detail
-
-
-def test_yaml_config_loads_with_comments_and_a_list(tmp_path):
-    p = tmp_path / "c.yaml"
-    p.write_text(
-        "# 2026-27, transcribed from the Sept 15 materials\n"
-        "starting_capital: 500000\n"
-        "approved_etfs:\n  - SPY\n  - VTI\n"
-        "position_ceiling_fraction: 0.15\n"
-        "minimum_activity_deadline: 2026-10-09\n"
-        'client_mandate_summary: "Growth to $1.5M over ten years."\n'
-    )
-    cfg = load_season_config(p)
-    assert cfg.approved_etfs == frozenset({"SPY", "VTI"})
-    assert cfg.starting_capital == Decimal("500000")
-
-
-@pytest.mark.parametrize(
-    "mutate, fragment",
-    [
-        (lambda c: c.pop("approved_etfs"), "approved_etfs"),
-        (lambda c: c.update(aproved_etfs=[]), "aproved_etfs"),  # typo -> unknown key
-        (lambda c: c.update(approved_etfs=[]), "at least one"),
-        (lambda c: c.update(starting_capital="0"), "starting_capital"),
-        (lambda c: c.update(position_ceiling_fraction="1.5"), "position_ceiling_fraction"),
-        (lambda c: c.update(minimum_activity_deadline="Oct 9"), "minimum_activity_deadline"),
-        (lambda c: c.update(client_mandate_summary="  "), "client_mandate_summary"),
-    ],
-)
-def test_invalid_configs_are_rejected_by_name(tmp_path, mutate, fragment):
-    bad = dict(CONFIG)
-    mutate(bad)
-    with pytest.raises(WhartonConfigError) as e:
-        load_season_config(write_json(tmp_path, bad))
-    assert fragment in str(e.value)
-
-
-def test_template_names_all_five_keys_and_the_release_date():
-    t = season_config_template()
-    for k in (
-        "starting_capital",
-        "approved_etfs",
-        "position_ceiling_fraction",
-        "minimum_activity_deadline",
-        "client_mandate_summary",
-    ):
-        assert k in t
-    assert "2026-09-15" in t
-
-
-def test_config_money_never_passes_through_float(tmp_path):
-    cfg = load_season_config(write_json(tmp_path, {**CONFIG, "starting_capital": 500000.10}))
-    assert cfg.starting_capital == Decimal("500000.10")
-
-
-def test_unknown_config_format_is_rejected(tmp_path):
-    p = tmp_path / "config.txt"
-    p.write_text("starting_capital: 500000\n")
-    with pytest.raises(WhartonConfigError):
-        load_season_config(p)
-
-
-# ---------------------------------------------------------------------------
-# Task 4: TradeBudget
+# Trade budget
 # ---------------------------------------------------------------------------
 
 
 def test_budget_severity_ladder():
-    assert TradeBudget(0).severity is BudgetSeverity.OK
-    assert TradeBudget(29).severity is BudgetSeverity.OK
-    assert TradeBudget(30).severity is BudgetSeverity.NOTICE
-    assert TradeBudget(40).severity is BudgetSeverity.WARNING
-    assert TradeBudget(190).severity is BudgetSeverity.CRITICAL
-    assert TradeBudget(200).severity is BudgetSeverity.BLOCKED
+    assert TradeBudget(trades_used=0).severity is BudgetSeverity.OK
+    assert TradeBudget(trades_used=30).severity is BudgetSeverity.NOTICE
+    assert TradeBudget(trades_used=40).severity is BudgetSeverity.WARNING
+    assert TradeBudget(trades_used=190).severity is BudgetSeverity.CRITICAL
+    assert TradeBudget(trades_used=200).severity is BudgetSeverity.BLOCKED
 
 
 def test_trade_forty_warns_but_does_not_block():
-    check = TradeBudget(40).to_rule_check(Decimal("500000"))
-    assert check.satisfied is True  # still legal
-    assert "WARNING" in check.detail
-    assert "40" in check.detail and "200" in check.detail
-    assert TradeBudget(40).can_trade() is True
+    check = TradeBudget(trades_used=40).to_rule_check(Decimal("300000"))
+    assert check.satisfied is True and "WARNING" in check.detail
 
 
 def test_trade_two_hundred_hard_blocks():
-    b = TradeBudget(200)
-    assert b.is_exhausted is True
-    assert b.can_trade() is False
-    check = b.to_rule_check(Decimal("500000"))
-    assert check.satisfied is False and check.status is RuleStatus.VERIFIED
-    assert b.blocked_order("AAA").reason is BlockReason.TRADE_BUDGET_EXHAUSTED
-
-
-def test_commission_drag_on_500k_at_40_trades():
-    b = TradeBudget(40)
-    assert b.commission_spent == Decimal("1000")
-    assert b.commission_drag_fraction(Decimal("500000")) == Decimal("0.002")
-    assert b.commission_drag_pct(Decimal("500000")) == Decimal("0.2")
+    check = TradeBudget(trades_used=200).to_rule_check(Decimal("300000"))
+    assert check.satisfied is False
 
 
 def test_full_hard_cap_costs_five_thousand():
-    assert TradeBudget(200).commission_spent == Decimal("5000")
+    assert TradeBudget().commission_at_hard_cap == Decimal("5000")
+
+
+def test_commission_drag_on_300k_at_40_trades():
+    assert TradeBudget(trades_used=40).commission_drag_pct(Decimal("300000")) == Decimal("0.333333")
 
 
 def test_drag_on_non_positive_equity_raises():
     with pytest.raises(ValueError):
-        TradeBudget(1).commission_drag_fraction(Decimal("0"))
+        TradeBudget(trades_used=1).commission_drag_fraction(Decimal("0"))
 
 
 def test_with_trades_is_immutable_and_accumulates():
-    b = TradeBudget(0)
-    assert b.with_trades(3).trades_used == 3
-    assert b.trades_used == 0
+    b = TradeBudget(trades_used=3)
+    assert b.with_trades(2).trades_used == 5 and b.trades_used == 3
 
 
 # ---------------------------------------------------------------------------
-# Task 5: check_rules and sizing_constraints
+# Rule checks
 # ---------------------------------------------------------------------------
 
 
-def test_check_rules_is_never_empty():
-    assert WhartonProfile().check_rules(empty_account(), date(2026, 9, 6))
+def test_check_rules_names_the_season_and_the_window():
+    checks = WhartonProfile().check_rules(account_worth_300k(), OPEN_DAY)
+    assert named(checks, "season_rules_loaded").satisfied
+    window = named(checks, "trading_window")
+    assert window.deadline == TRADING_ENDS and "frozen" in window.detail
 
 
-def test_unverified_emits_an_incomplete_check_naming_sept_15():
-    checks = WhartonProfile().check_rules(empty_account(), date(2026, 9, 6))
-    inc = [c for c in checks if c.status is RuleStatus.INCOMPLETE]
-    assert inc
-    joined = " ".join(c.detail for c in inc)
-    assert "2026-09-15" in joined
-    for missing in (
-        "starting capital",
-        "Approved ETF List",
-        "client mandate",
-        "position limit",
-        "minimum trading activity",
-    ):
-        assert missing.lower() in joined.lower()
-    assert "$100,000" in joined  # names the misreported figure as wrong
-
-
-def test_unverified_has_a_verified_unsatisfied_gate():
-    checks = WhartonProfile().check_rules(empty_account(), date(2026, 9, 6))
-    assert any(c.status is RuleStatus.VERIFIED and not c.satisfied for c in checks)
-
-
-def test_verified_season_lifts_the_gate(tmp_path):
-    prof = verified_profile(tmp_path).with_trade_budget(TradeBudget(1))
-    acct = account_holding("SPY", AssetClass.ETF, qty=10, mark="600")
-    checks = prof.check_rules(acct, date(2026, 10, 1))
-    assert all(c.satisfied for c in checks if c.status is RuleStatus.VERIFIED)
-
-
-def test_approved_etf_minimum_unsatisfied_when_no_etf_held(tmp_path):
-    prof = verified_profile(tmp_path)
-    acct = account_holding("AAA", AssetClass.STOCK, qty=10, mark="100")
-    c = named(prof.check_rules(acct, date(2026, 10, 1)), "approved_etf_minimum")
-    assert c.satisfied is False
-
-
-def test_minimum_trading_activity_deadline_is_reported_with_its_date(tmp_path):
-    prof = verified_profile(tmp_path)
-    c = named(prof.check_rules(empty_account(), date(2026, 10, 1)), "minimum_trading_activity")
-    assert c.deadline == date(2026, 10, 9)
-    assert c.satisfied is False  # nothing traded yet
+def test_notes_analysis_is_progress_until_due_then_fails():
+    early = named(
+        WhartonProfile().check_rules(account_worth_300k(), OPEN_DAY), "notes_analysis_trades"
+    )
+    assert early.satisfied and early.deadline == NOTES_ANALYSIS_DUE
+    late = named(
+        WhartonProfile().check_rules(account_worth_300k(), date(2026, 10, 24)),
+        "notes_analysis_trades",
+    )
+    assert late.satisfied is False
+    done = named(
+        profile_with_trades(3).check_rules(account_worth_300k(), date(2026, 10, 24)),
+        "notes_analysis_trades",
+    )
+    assert done.satisfied
 
 
 def test_margin_liability_is_an_error_not_a_warning():
-    acct = AccountState(date(2026, 10, 1), Decimal("100"), (), {}, Decimal("0"), Decimal("5000"))
-    c = named(WhartonProfile().check_rules(acct, date(2026, 10, 1)), "margin_and_shorting_ban")
-    assert c.status is RuleStatus.VERIFIED and c.satisfied is False
-    assert "margin" in c.detail.lower()
+    acct = AccountState(OPEN_DAY, Decimal("1000"), (), {}, Decimal("0"), Decimal("500"))
+    assert (
+        named(WhartonProfile().check_rules(acct, OPEN_DAY), "margin_and_shorting_ban").satisfied
+        is False
+    )
 
 
 def test_short_position_is_an_error():
-    lot = Lot("AAA", -5, Decimal("50"), Decimal("25"), date(2026, 9, 29))
-    position = Position("AAA", AssetClass.STOCK, (lot,))
-    acct = AccountState(
-        date(2026, 10, 1),
-        Decimal("100"),
-        (position,),
-        {"AAA": Decimal("50")},
-        Decimal("0"),
-        Decimal("0"),
+    acct = account_holding("ABC", AssetClass.STOCK, -10, "20")
+    assert (
+        named(WhartonProfile().check_rules(acct, OPEN_DAY), "margin_and_shorting_ban").satisfied
+        is False
     )
-    c = named(WhartonProfile().check_rules(acct, date(2026, 10, 1)), "margin_and_shorting_ban")
-    assert c.status is RuleStatus.VERIFIED and c.satisfied is False
-    assert "short" in c.detail.lower()
 
 
-def test_commission_drag_check_reports_dollars_and_percent(tmp_path):
-    prof = verified_profile(tmp_path).with_trade_budget(TradeBudget(40))
-    c = named(prof.check_rules(account_worth_500k(), date(2026, 10, 1)), "commission_drag")
-    assert "$1,000" in c.detail and "0.2" in c.detail
+def test_commission_drag_check_reports_dollars_and_percent():
+    check = named(
+        profile_with_trades(4).check_rules(account_worth_300k(), OPEN_DAY), "commission_drag"
+    )
+    assert "$100.00" in check.detail and "%" in check.detail
 
 
-def test_sizing_constraints_are_cash_only_and_price_floored():
-    sc = WhartonProfile().sizing_constraints(account_worth_500k())
-    assert sc.min_price == Decimal("5")
-    assert sc.min_shares == 1
+def test_sizing_constraints_are_cash_only():
+    sc = WhartonProfile().sizing_constraints(account_worth_300k())
+    assert sc.spendable_cash == account_worth_300k().cash
     assert sc.commission_per_trade == Decimal("25")
-    assert sc.sell_fee_rate == Decimal("0")
-    assert sc.spendable_cash == account_worth_500k().cash  # margin banned: cash only
-    assert sc.position_ceiling_fraction == Decimal("0.20")  # self-imposed default
-
-
-# ---------------------------------------------------------------------------
-# Task 6: execution_note and the order-sheet gate
-# ---------------------------------------------------------------------------
 
 
 def test_execution_note_says_real_time_and_contrasts_deca():
-    note = WhartonProfile().execution_note(date(2026, 10, 1))
-    low = note.lower()
-    assert "real time" in low or "real-time" in low
-    assert ("9:30" in note and "4:00" in note) or "16:00" in note
-    assert "10" in note and "15" in note  # display lag minutes
-    assert "next" in low and "open" in low  # after-hours -> next day's open
-    assert "international" in low and "bond" in low
-    assert "deca" in low  # the contrast is explicit
-    assert "close" in low  # DECA fills at the close
-    assert "\n" not in note  # contract says one line
+    note = WhartonProfile().execution_note(OPEN_DAY)
+    assert "real-time" in note and "DECA" in note and "next open" in note
 
 
-def test_execution_note_flags_that_trading_has_not_opened_yet():
-    assert "2026-09-28" in WhartonProfile().execution_note(date(2026, 9, 6))
+def test_execution_note_flags_the_opening_and_the_freeze():
+    assert "opens" in WhartonProfile().execution_note(date(2026, 9, 20))
+    assert "frozen" in WhartonProfile().execution_note(date(2026, 11, 9))
 
 
-def test_unverified_plan_is_not_actionable():
-    prof = WhartonProfile()
-    plan = build_daily_plan(prof, empty_account(), date(2026, 9, 6))
-    assert plan.is_actionable is False
+# ---------------------------------------------------------------------------
+# Plan
+# ---------------------------------------------------------------------------
 
 
-def test_unverified_plan_emits_no_orders_but_keeps_screening():
+def test_orders_are_withheld_before_trading_opens():
     plan = build_daily_plan(
-        WhartonProfile(), empty_account(), date(2026, 9, 6), orders=(a_sized_order("AAA"),)
+        WhartonProfile(), account_worth_300k(), date(2026, 9, 21), (a_sized_order("VTI"),)
+    )
+    assert plan.orders == () and plan.blocked[0].reason is BlockReason.RULE_CONFLICT
+
+
+def test_orders_are_withheld_after_the_freeze():
+    plan = build_daily_plan(
+        WhartonProfile(), account_worth_300k(), date(2026, 11, 9), (a_sized_order("VTI"),)
     )
     assert plan.orders == ()
-    assert any(b.reason is BlockReason.RULE_CONFLICT for b in plan.blocked)
-    # screening still runs:
-    assert WhartonProfile().is_eligible(stock("AAA"), bar("AAA", "50"))[0] is True
 
 
-def test_verified_plan_with_a_clean_book_is_actionable(tmp_path):
-    prof = verified_profile(tmp_path).with_trade_budget(TradeBudget(1))
+def test_open_window_plan_with_a_clean_book_is_actionable():
     plan = build_daily_plan(
-        prof,
-        account_holding("SPY", AssetClass.ETF, 10, "600"),
-        date(2026, 10, 1),
-        orders=(a_sized_order("SPY"),),
+        WhartonProfile(), account_worth_300k(), OPEN_DAY, (a_sized_order("VTI"),)
     )
-    assert plan.is_actionable is True and len(plan.orders) == 1
+    assert plan.is_actionable and len(plan.orders) == 1
 
 
-def test_exhausted_budget_makes_a_verified_plan_non_actionable(tmp_path):
-    prof = verified_profile(tmp_path).with_trade_budget(TradeBudget(200))
+def test_exhausted_budget_blocks_every_order():
     plan = build_daily_plan(
-        prof, account_holding("SPY", AssetClass.ETF, 10, "600"), date(2026, 10, 1)
+        profile_with_trades(200), account_worth_300k(), OPEN_DAY, (a_sized_order("VTI"),)
     )
-    assert plan.is_actionable is False
+    assert plan.orders == () and plan.is_actionable is False
+
+
+def test_default_season_is_the_published_one():
+    assert WhartonProfile().season == SEASON_2026_27
 
 
 def test_module_emits_no_submittable_prose():

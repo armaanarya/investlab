@@ -11,8 +11,12 @@ The runbook for operating it day to day, by a person or an agent, is
 **[AGENTS.md](AGENTS.md)**. How the sheet decides, and what the backtests show,
 is **[docs/STRATEGY.md](docs/STRATEGY.md)**.
 
-Wharton WInS code is also in the repo. It is research-only and outside the DECA
-process.
+**Wharton WInS** (2026-27 rules, published Sept 15) has its own commands:
+`investlab wharton plan` turns the team's chosen strategy into WInS orders,
+`investlab wharton project` simulates Laura Gao's portfolio to 2033 (operating
+reserve, chance all ten payments are funded, facility-contribution range), and
+`investlab wharton cashflows` prints the case study's numbers. Rules:
+`docs/rules/wharton-verified.md`. Strategy inputs: `configs/wharton_strategy.json`.
 
 ## What this is not
 
@@ -90,6 +94,9 @@ the $5 commission, so fill price = (cost basis − 5) ÷ shares.
 | `journal add` / `list` / `export` | Your own reasoning, hash-chained |
 | `backtest --start D --end D` | Replay the sheet against five baselines and write a tear sheet |
 | `backtest-rolling --start D` | Replay it over many 12-week windows and score how often it beat SPY |
+| `wharton plan` | WInS orders for any sleeve outside its band, checked against Wharton rules |
+| `wharton project [--strategy S] [--save]` | Monte Carlo of each strategy to 2033: reserve, funding odds, contribution range |
+| `wharton cashflows` | Laura's cash flows and what the operating reserve costs at each rate |
 
 ## How the sheet decides
 
@@ -155,7 +162,7 @@ results swing widely with the start date. Returns are never annualised.
 
 ```
 AGENTS.md            the operating runbook
-configs/             team rulings (deca_rulings.json)
+configs/             team rulings (deca_rulings.json), Wharton strategy inputs
 docs/
   STRATEGY.md        how the sheet decides, and the backtest evidence
   OPEN-TASKS.md      what is left, what is human-only, what is deferred
@@ -171,7 +178,9 @@ src/investlab/
   earnings.py        earnings calendar and gap sessions
   contracts.py       shared types
   config.py          rules constants and strategy parameters
-  competitions/      deca.py rules engine; wharton.py (research-only)
+  competitions/      deca.py and wharton.py rules engines
+  wharton_client.py  Laura Gao cash flows and the projection engine
+  cli_wharton.py     the `wharton` commands
   portfolio/         ledger, sizing, risk and drawdown, exits
   data/              cache, providers (yfinance, Alpaca, Tiingo), universe
   backtest/          event loop and baselines

@@ -1,7 +1,6 @@
 # Open tasks (DECA SMG)
 
-Last updated 2026-09-12. The DECA process is the scope of the Codex handoff;
-Wharton items are kept at the bottom, unchanged in substance.
+Last updated 2026-09-18. DECA first; Wharton (rules published 2026-09-15) at the bottom.
 
 | Date | What |
 |---|---|
@@ -111,13 +110,43 @@ Wharton items are kept at the bottom, unchanged in substance.
 
 ---
 
-## Wharton WInS (out of scope for the DECA handoff)
+## Wharton WInS
 
-Everything Wharton needs is blocked on its 2026-27 materials (released Sept 15
-to registered teams): the season config (`configs/wharton_2026_27.json` with
-starting cash, Approved ETF List, commission, minimum price), the client mandate,
-the position ceiling, and the minimum-trading-activity deadline. Starting capital
-was $500,000 last season; the $100,000 figure online is wrong for this
-competition. The profile stays research-only until then. Wharton bans crypto
-outright, so the DECA bitcoin ruling does not apply to it, and it audits trading
-notes: nothing generated may be submitted as the team's own work.
+Rules and client: `docs/rules/wharton-verified.md` (2026-27, read 2026-09-18).
+Commands: `investlab wharton cashflows | project | plan`, `rules --profile
+wharton`. Strategy inputs: `configs/wharton_strategy.json`.
+
+| Date | What |
+|---|---|
+| **Mon Sep 28** | Trading opens |
+| Fri Oct 9, 5 p.m. ET | Team roster (members locked) |
+| **Fri Oct 23, 5 p.m. ET** | Trading Notes Analysis: 3 executed trades with notes |
+| **Fri Nov 6, 5 p.m. ET** | IPS due; trading ends; portfolio frozen |
+| Mon Nov 9 | Final Report instructions released |
+| Fri Dec 4, 5 p.m. ET | Final Report and school documentation |
+
+### Human-only (Wharton)
+
+- [ ] **Pick the strategy** and make `active` in `configs/wharton_strategy.json`
+      yours: change weights, the reserve rule, the flexibility buffer.
+- [ ] **Replace every placeholder return and volatility** with a cited source
+      (the plan and projections print a banner until you do).
+- [ ] **Re-read the 2026-27 General Rules page** (AI policy, citation format);
+      it returned 403 to the tool.
+- [ ] Write every Trading Note in WInS at the time of the trade, in your own
+      words. Record each fill with `investlab fill --profile wharton`.
+- [ ] Check which U.S. Treasuries WInS lists for 2036-2042 maturities (the
+      ladder's later rungs).
+- [ ] Roster by Oct 9; request school documentation early.
+
+### Open code tasks (Wharton)
+
+1. **Bond positions in the ledger.** WInS Treasuries price per 100 face and
+   the cache cannot price them; `fill --asset-class bond` records them at cost.
+   A face-value/clean-price model and a manual mark command are not built.
+2. **Yield-driven ladder.** The ladder's discount rate is a typed assumption;
+   pulling actual yields for 2032-2035 iBonds and pricing the reserve from them
+   is not built.
+3. **Evidence export for the Final Report**: charts of the projection
+   distributions and the funding-probability-vs-reserve curve (numbers only).
+4. **Sleeve-level performance** in `ledger/wharton/LEDGER.md`.
