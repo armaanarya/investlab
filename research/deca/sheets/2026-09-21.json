@@ -4,15 +4,15 @@
   "fill_session": "2026-09-21",
   "signal_session": "2026-09-18",
   "data_is_stale": false,
-  "equity": "97722.03",
-  "cash": "21680.13",
+  "equity": "98103.07",
+  "cash": "8255.17",
   "drawdown_stage": "normal",
   "rule_checks": [
     {
       "name": "diversification_stocks",
       "status": "verified",
       "satisfied": true,
-      "detail": "the stocks class holds $78,304.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.",
+      "detail": "the stocks class holds $91,726.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.",
       "deadline": "2026-12-04"
     },
     {
@@ -40,14 +40,14 @@
       "name": "position_ceiling",
       "status": "verified",
       "satisfied": true,
-      "detail": "CVX at 30.0% of equity, at or above the 30.0% ceiling. No sale is required; further buys in the named symbol(s) are blocked.",
+      "detail": "No position is at or above the 30.0% position ceiling.",
       "deadline": null
     },
     {
       "name": "cash_and_margin",
       "status": "verified",
       "satisfied": true,
-      "detail": "Cash balance is $21,680.13.",
+      "detail": "Cash balance is $8,255.17.",
       "deadline": null
     },
     {
@@ -67,6 +67,7 @@
   ],
   "alerts": [
     "SELL: ORCL (stop). Sale proceeds are not counted toward today's buys.",
+    "Not enough cash for the mutual fund leg: it needs $10,395.77, cash is $8,255.17. A sale has to fund it before 2026-10-23.",
     "DECA mutual funds leg short of $10,000 net cost (32 days left, due 2026-10-23 4:00 p.m. ET).",
     "DECA bonds leg short of $10,000 net cost (32 days left, due 2026-10-23 4:00 p.m. ET)."
   ],
@@ -106,7 +107,7 @@
       "reference_price": null,
       "estimated_cost": "11005",
       "target_net_cost": "10200.00",
-      "instructions": "Pick a bond from SMG's own bond list rated BBB or better (a bond ETF does NOT count). Corporate and municipal bonds trade in $1,000 face, Treasuries in $100. Face needed = $10,200.00 / (price / 100), rounded UP to the increment: at 100.00 that is $11,000 face; at 98.00, $11,000. With the orders above, cash covers $11,000 face at a price up to 102.54 per 100. Record it with `investlab fill --asset-class bond` using the platform's net cost.",
+      "instructions": "Pick a bond from SMG's own bond list rated BBB or better (a bond ETF does NOT count). Corporate and municipal bonds trade in $1,000 face, Treasuries in $100. Face needed = $10,200.00 / (price / 100), rounded UP to the increment: at 100.00 that is $11,000 face; at 98.00, $11,000. Cash does not cover the bond leg after the orders above; a sale must fund it. Record it with `investlab fill --asset-class bond` using the platform's net cost.",
       "alternatives": []
     }
   ],
@@ -133,6 +134,30 @@
       "verdict": "HOLD",
       "detail": "hold",
       "flags": []
+    },
+    {
+      "symbol": "IBIT",
+      "asset_class": "etf",
+      "sector": "Digital Assets",
+      "quantity": 300,
+      "avg_cost": "44.7400",
+      "last_close": "46.02",
+      "close_session": "2026-09-18",
+      "market_value": "13806.00",
+      "unrealized": "384.00",
+      "return_pct": "2.86",
+      "entry_stop": "40.88",
+      "trailing_stop": "39.06",
+      "active_stop": "40.88",
+      "distance_to_stop_pct": "11.17",
+      "sessions_held": 4,
+      "score": 49.2,
+      "next_earnings": null,
+      "verdict": "HOLD",
+      "detail": "hold",
+      "flags": [
+        "held under the team bitcoin-ETF ruling; no written DECA confirmation"
+      ]
     },
     {
       "symbol": "ORCL",
@@ -181,7 +206,7 @@
   ],
   "blocked": [],
   "notes": [
-    "Cash $21,680.13; after compliance set-asides and a $1,954.44 cash floor, $0.00 is available for new buys.",
+    "Cash $8,255.17; after compliance set-asides and a $1,962.06 cash floor, $0.00 is available for new buys.",
     "Less than $2,000 is free after set-asides, so no new buys were sized."
   ]
 }
