@@ -1,8 +1,8 @@
 {
   "profile": "deca",
-  "as_of": "2026-09-11",
+  "as_of": "2026-09-14",
   "starting_cash": "100000",
-  "cash": "21680.13",
+  "cash": "8255.17",
   "positions": [
     {
       "symbol": "ORCL",
@@ -40,6 +40,19 @@
           "commission": "5",
           "opened": "2026-09-11",
           "stop": "85.95"
+        }
+      ]
+    },
+    {
+      "symbol": "IBIT",
+      "asset_class": "etf",
+      "lots": [
+        {
+          "quantity": 300,
+          "price": "44.74",
+          "commission": "5",
+          "opened": "2026-09-14",
+          "stop": "40.88"
         }
       ]
     }

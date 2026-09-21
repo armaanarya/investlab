@@ -1,0 +1,27 @@
+{
+  "as_of": "2026-09-21",
+  "cash": "8255.17",
+  "total_equity": "98103.07",
+  "positions": [
+    {
+      "symbol": "CVX",
+      "quantity": 140,
+      "cost_basis": "29973.40"
+    },
+    {
+      "symbol": "IBIT",
+      "quantity": 300,
+      "cost_basis": "13427.00"
+    },
+    {
+      "symbol": "ORCL",
+      "quantity": 142,
+      "cost_basis": "21344.76"
+    },
+    {
+      "symbol": "WFC",
+      "quantity": 299,
+      "cost_basis": "27001.71"
+    }
+  ]
+}

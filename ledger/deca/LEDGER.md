@@ -5,38 +5,39 @@ by hand. The competition platform is the authoritative record; this
 mirrors it. Returns are period returns over the competition window and
 are **not annualised**.
 
-**As of 2026-09-11**
+**As of 2026-09-14**
 
 ## Headline
 
 | | |
 |---|---:|
-| Equity | **$99,985.00** |
+| Equity | **$98,103.07** |
 | Started with | $100,000.00 |
-| Total P&L | **$-15.00 (-0.02%)** |
+| Total P&L | **$-1,896.93 (-1.90%)** |
 | Realised (closed trades) | $0.00 |
-| Unrealised (open positions) | $0.00 |
-| Cash | $21,680.13 (21.7% of equity) |
-| Invested at cost | $78,304.87 |
-| Commissions paid | $15.00 |
-| Trades recorded | 3 |
-| Max drawdown (recorded) | 0.02% |
+| Unrealised (open positions) | $-1,878.97 |
+| Cash | $8,255.17 (8.4% of equity) |
+| Invested at cost | $91,726.87 |
+| Commissions paid | $20.00 |
+| Trades recorded | 4 |
+| Max drawdown (recorded) | 2.86% |
 
 ### Versus S&P 500 (SPY)
 
 DECA ranks on percent return against S&P 500 growth, so this line is
 the one that decides whether you qualify.
 
-- Benchmark over the same window: **-0.22%**
-- Excess return: **+0.20%**
+- Benchmark over the same window: **-0.56%**
+- Excess return: **-1.34%**
 
 ## Open positions
 
 | Symbol | Class | Shares | Avg cost | Mark | Cost basis | Value | Unrealised | Return | Days | Entry stop |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| ORCL | stock | 142 | $150.28 | $150.28 | $21,339.76 | $21,339.76 | $0.00 | +0.00% | 0 | $147.68 |
-| CVX | stock | 140 | $214.06 | $214.06 | $29,968.40 | $29,968.40 | $0.00 | +0.00% | 0 | $205.62 |
-| WFC | stock | 299 | $90.29 | $90.29 | $26,996.71 | $26,996.71 | $0.00 | +0.00% | 0 | $85.95 |
+| IBIT | etf | 300 | $44.74 | $46.02 | $13,422.00 | $13,806.00 | $384.00 | +2.86% | 0 | $40.88 |
+| ORCL | stock | 142 | $150.28 | $147.61 | $21,339.76 | $20,960.62 | $-379.14 | -1.78% | 3 | $147.68 |
+| CVX | stock | 140 | $214.06 | $209.51 | $29,968.40 | $29,331.40 | $-637.00 | -2.13% | 3 | $205.62 |
+| WFC | stock | 299 | $90.29 | $86.12 | $26,996.71 | $25,749.88 | $-1,246.83 | -4.62% | 3 | $85.95 |
 
 ## Closed trades
 
@@ -52,18 +53,18 @@ one-business-day clock.
 | Class | Net cost | $10,000 minimum by 2026-10-23 |
 |---|---:|---|
 | stocks | $78,304.87 | met |
-| ETFs (count as stocks) | $0.00 | counts toward stocks |
+| ETFs (count as stocks) | $13,422.00 | counts toward stocks |
 | mutual funds | $0.00 | **NOT MET** |
 | bonds | $0.00 | **NOT MET** |
 
 ## Rule status
 
-- diversification_stocks: ok (verified) — the stocks class holds $78,304.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.
+- diversification_stocks: ok (verified) — the stocks class holds $91,726.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.
 - diversification_mutual_funds: NOT MET (verified) — the mutual funds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
 - diversification_bonds: NOT MET (verified) — the bonds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).
-- diversification_deadline: ok (verified) — 30 trading days and 41 calendar days remain until the diversification deadline of 2026-10-23.
+- diversification_deadline: ok (verified) — 24 trading days and 32 calendar days remain until the diversification deadline of 2026-10-23.
 - position_ceiling: ok (verified) — No position is at or above the 30.0% position ceiling.
-- cash_and_margin: ok (verified) — Cash balance is $21,680.13.
+- cash_and_margin: ok (verified) — Cash balance is $8,255.17.
 - sec_fee_rate: ok (incomplete) — SEC fee rate on sells is UNVERIFIED against a primary DECA SMG source. This module assumes 0.0000278 as a documented placeholder until a primary source confirms the real rate.
 - bitcoin_etf_ruling: ok (conflicting) — Spot bitcoin ETFs are eligible by team ruling (Armaan (team captain) on 2026-09-12). The published DECA SMG guidelines list bitcoin and commodities as banned, and no written confirmation is on file. A prohibited trade can be invalidated after the fact and repeat violations disqualify. Record SIFMA's or the Local Rules page's answer in configs/deca_rulings.json (written_source) to verify it.
 
@@ -75,6 +76,17 @@ one-business-day clock.
 | 2026-09-09 | $100,000.00 | $762.40 |
 | 2026-09-10 | $100,000.00 | $757.83 |
 | 2026-09-11 | $99,985.00 | $764.29 |
+| 2026-09-14 | $98,463.40 | $760.88 |
+| 2026-09-15 | $98,429.91 | $757.39 |
+| 2026-09-16 | $97,137.40 | $754.05 |
+| 2026-09-17 | $98,226.82 | $762.60 |
+| 2026-09-18 | $98,101.03 | $761.69 |
+
+## Cash events (interest, dividends, fees)
+
+| Session | Kind | Symbol | Amount | Cash after |
+|---|---|---|---:|---:|
+| 2026-09-19 | interest | — | $2.04 | $8,255.17 |
 
 ## All recorded trades
 
@@ -83,10 +95,11 @@ one-business-day clock.
 | 2026-09-11 | ORCL | buy | 142 | $150.28 | $5.00 | $78,655.24 |
 | 2026-09-11 | CVX | buy | 140 | $214.06 | $5.00 | $48,681.84 |
 | 2026-09-11 | WFC | buy | 299 | $90.29 | $5.00 | $21,680.13 |
+| 2026-09-14 | IBIT | buy | 300 | $44.74 | $5.00 | $8,253.13 |
 
 ---
 
 Reasoning for each trade lives in `journal.jsonl` and is the student's own
 work, stored verbatim and hash-chained. It is never generated.
 
-<sub>Generated 2026-09-12T23:05:43-04:00</sub>
+<sub>Generated 2026-09-21T12:08:58-04:00</sub>
