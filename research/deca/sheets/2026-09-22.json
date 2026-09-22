@@ -1,0 +1,212 @@
+{
+  "profile": "deca",
+  "as_of": "2026-09-22",
+  "fill_session": "2026-09-22",
+  "signal_session": "2026-09-21",
+  "data_is_stale": false,
+  "equity": "98442.95",
+  "cash": "8255.17",
+  "drawdown_stage": "normal",
+  "rule_checks": [
+    {
+      "name": "diversification_stocks",
+      "status": "verified",
+      "satisfied": true,
+      "detail": "the stocks class holds $91,726.87 net cost, at or above the $10,000.00 minimum; requirement satisfied. A later market-value decline requires no action. Hold through 2026-12-04.",
+      "deadline": "2026-12-04"
+    },
+    {
+      "name": "diversification_mutual_funds",
+      "status": "verified",
+      "satisfied": false,
+      "detail": "the mutual funds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).",
+      "deadline": "2026-10-23"
+    },
+    {
+      "name": "diversification_bonds",
+      "status": "verified",
+      "satisfied": false,
+      "detail": "the bonds class holds $0.00 net cost, $10,000.00 short of the $10,000.00 minimum. Budget $10,005.00 gross to absorb the $5.00 commission. Due by 2026-10-23 (Friday).",
+      "deadline": "2026-10-23"
+    },
+    {
+      "name": "diversification_deadline",
+      "status": "verified",
+      "satisfied": true,
+      "detail": "23 trading days and 31 calendar days remain until the diversification deadline of 2026-10-23.",
+      "deadline": "2026-10-23"
+    },
+    {
+      "name": "position_ceiling",
+      "status": "verified",
+      "satisfied": true,
+      "detail": "No position is at or above the 30.0% position ceiling.",
+      "deadline": null
+    },
+    {
+      "name": "cash_and_margin",
+      "status": "verified",
+      "satisfied": true,
+      "detail": "Cash balance is $8,255.17.",
+      "deadline": null
+    },
+    {
+      "name": "sec_fee_rate",
+      "status": "incomplete",
+      "satisfied": true,
+      "detail": "SEC fee rate on sells is UNVERIFIED against a primary DECA SMG source. This module assumes 0.0000278 as a documented placeholder until a primary source confirms the real rate.",
+      "deadline": null
+    },
+    {
+      "name": "bitcoin_etf_ruling",
+      "status": "conflicting",
+      "satisfied": true,
+      "detail": "Spot bitcoin ETFs are eligible by team ruling (Armaan (team captain) on 2026-09-12). The published DECA SMG guidelines list bitcoin and commodities as banned, and no written confirmation is on file. A prohibited trade can be invalidated after the fact and repeat violations disqualify. Record SIFMA's or the Local Rules page's answer in configs/deca_rulings.json (written_source) to verify it.",
+      "deadline": null
+    }
+  ],
+  "alerts": [
+    "SELL: CVX (stop). Sale proceeds are not counted toward today's buys.",
+    "Not enough cash for the mutual fund leg: it needs $10,281.34, cash is $8,255.17. A sale has to fund it before 2026-10-23.",
+    "DECA mutual funds leg short of $10,000 net cost (31 days left, due 2026-10-23 4:00 p.m. ET).",
+    "DECA bonds leg short of $10,000 net cost (31 days left, due 2026-10-23 4:00 p.m. ET)."
+  ],
+  "sells": [
+    {
+      "symbol": "CVX",
+      "asset_class": "stock",
+      "quantity": 140,
+      "reason": "stop",
+      "reference_close": "203.67",
+      "estimated_proceeds": "28508.00",
+      "estimated_commission": "5",
+      "estimated_sec_fee": "0.80",
+      "estimated_realized": "-1465.40",
+      "active_stop": "205.62",
+      "detail": "2026-09-21 close $203.67 is at or below the entry stop $205.62"
+    }
+  ],
+  "compliance": [
+    {
+      "bucket": "mutual_funds",
+      "symbol": "FXAIX",
+      "quantity": 38,
+      "reference_price": "270.43",
+      "estimated_cost": "10281.34",
+      "target_net_cost": "10200.00",
+      "instructions": "Buy 38 shares of FXAIX (S&P 500 index fund) to reach at least $10,200.00 net cost, 2% over the $10,000 minimum. If SMG does not list FXAIX, use the first alternative it does list.",
+      "alternatives": [
+        "VFIAX 15 shares @ $718.23 = $10,778.45",
+        "VTSAX 55 shares @ $185.49 = $10,206.95"
+      ]
+    },
+    {
+      "bucket": "bonds",
+      "symbol": null,
+      "quantity": null,
+      "reference_price": null,
+      "estimated_cost": "11005",
+      "target_net_cost": "10200.00",
+      "instructions": "Pick a bond from SMG's own bond list rated BBB or better (a bond ETF does NOT count). Corporate and municipal bonds trade in $1,000 face, Treasuries in $100. Face needed = $10,200.00 / (price / 100), rounded UP to the increment: at 100.00 that is $11,000 face; at 98.00, $11,000. Cash does not cover the bond leg after the orders above; a sale must fund it. Record it with `investlab fill --asset-class bond` using the platform's net cost.",
+      "alternatives": []
+    }
+  ],
+  "buys": [],
+  "held": [
+    {
+      "symbol": "CVX",
+      "asset_class": "stock",
+      "sector": "Energy",
+      "quantity": 140,
+      "avg_cost": "214.0600",
+      "last_close": "203.67",
+      "close_session": "2026-09-21",
+      "market_value": "28513.80",
+      "unrealized": "-1454.60",
+      "return_pct": "-4.85",
+      "entry_stop": "205.62",
+      "trailing_stop": "195.62",
+      "active_stop": "205.62",
+      "distance_to_stop_pct": "-0.96",
+      "sessions_held": 6,
+      "score": 31.7,
+      "next_earnings": "2026-10-30 BMO (yfinance)",
+      "verdict": "SELL",
+      "detail": "2026-09-21 close $203.67 is at or below the entry stop $205.62",
+      "flags": []
+    },
+    {
+      "symbol": "IBIT",
+      "asset_class": "etf",
+      "sector": "Digital Assets",
+      "quantity": 300,
+      "avg_cost": "44.7400",
+      "last_close": "49.01",
+      "close_session": "2026-09-21",
+      "market_value": "14703.00",
+      "unrealized": "1281.00",
+      "return_pct": "9.54",
+      "entry_stop": "40.88",
+      "trailing_stop": "41.40",
+      "active_stop": "41.40",
+      "distance_to_stop_pct": "15.53",
+      "sessions_held": 5,
+      "score": 80.9,
+      "next_earnings": null,
+      "verdict": "HOLD",
+      "detail": "hold",
+      "flags": [
+        "held under the team bitcoin-ETF ruling; no written DECA confirmation"
+      ]
+    },
+    {
+      "symbol": "ORCL",
+      "asset_class": "stock",
+      "sector": "Information Technology",
+      "quantity": 142,
+      "avg_cost": "150.2800",
+      "last_close": "148.56",
+      "close_session": "2026-09-21",
+      "market_value": "21095.52",
+      "unrealized": "-244.24",
+      "return_pct": "-1.14",
+      "entry_stop": "147.68",
+      "trailing_stop": "113.71",
+      "active_stop": "147.68",
+      "distance_to_stop_pct": "0.59",
+      "sessions_held": 6,
+      "score": 51.4,
+      "next_earnings": "2026-12-10 UNKNOWN (yfinance)",
+      "verdict": "HOLD",
+      "detail": "hold",
+      "flags": []
+    },
+    {
+      "symbol": "WFC",
+      "asset_class": "stock",
+      "sector": "Financials",
+      "quantity": 299,
+      "avg_cost": "90.2900",
+      "last_close": "86.54",
+      "close_session": "2026-09-21",
+      "market_value": "25875.46",
+      "unrealized": "-1121.25",
+      "return_pct": "-4.15",
+      "entry_stop": "85.95",
+      "trailing_stop": "81.21",
+      "active_stop": "85.95",
+      "distance_to_stop_pct": "0.68",
+      "sessions_held": 6,
+      "score": 45.4,
+      "next_earnings": "2026-10-13 BMO (yfinance)",
+      "verdict": "HOLD",
+      "detail": "hold",
+      "flags": []
+    }
+  ],
+  "blocked": [],
+  "notes": [
+    "Cash $8,255.17; after compliance set-asides and a $1,968.86 cash floor, $0.00 is available for new buys.",
+    "Less than $2,000 is free after set-asides, so no new buys were sized."
+  ]
+}
