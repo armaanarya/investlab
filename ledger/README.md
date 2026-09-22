@@ -1,20 +1,20 @@
-# Ledger
+# Ledgers
 
-The book that mirrors the DECA Stock Market Game account. The platform is the
-authoritative record; this copy exists so the order sheet knows what is held,
-at what cost, with what stops, and so the season has an auditable history.
+Separate books mirror the DECA Stock Market Game and Wharton WInS accounts.
+Each competition platform is the authoritative record; these copies track what
+is held, at what cost, and provide an auditable history.
 
 ```
 ledger/
   deca/       DECA Stock Market Game    ($100,000, Sept 8 - Dec 4 2026)
-  wharton/    Wharton WInS              (out of scope for the DECA handoff)
+  wharton/    Wharton WInS              ($300,000, Sept 28 - Nov 6 2026)
 ```
 
 The two are separate on purpose: a combined book would let a Wharton position
 appear to satisfy a DECA requirement, which is the exact mistake that
 disqualifies a team.
 
-## When the ledger changes
+## When the DECA ledger changes
 
 **Only when Armaan sends both his updated SMG account statistics and the list
 of trades he actually made.** He may make only some of the sheet's trades, or

@@ -1,11 +1,16 @@
-# Agent guide: DECA SMG
+# Agent guide: investlab
 
-How any coding agent (Codex, Claude, or otherwise) runs this repo day to day for
-the **DECA Stock Market Game**. The code says *what* the tool does; this file is
-the working agreement for *how* it is used. If a prompt and this file disagree,
-follow this file and say so.
+How any coding agent (Codex, Claude, or otherwise) runs this repo for both the
+**DECA Stock Market Game** and the **Wharton Global High School Investment
+Competition**. The code says *what* the tool does; this file is the working
+agreement for *how* it is used. If a prompt and this file disagree, follow this
+file and say so.
 
-Read in this order before doing anything:
+Choose the competition profile before doing anything. Never use one
+competition's holdings, rules, deadlines, or research as if they belonged to
+the other.
+
+For a DECA task, read in this order:
 
 1. `ledger/deca/LEDGER.md`: positions, cash, entry stops, rule status
 2. `AGENTS.md` (this file)
@@ -15,15 +20,48 @@ Read in this order before doing anything:
    the team's rulings
 5. `ledger/README.md`, `research/README.md`, `README.md`, `docs/OPEN-TASKS.md`
 
+For a Wharton task, read in this order:
+
+1. `ledger/wharton/LEDGER.md`: the WInS portfolio mirror and rule status
+2. `AGENTS.md` (this file)
+3. `docs/rules/wharton-verified.md`: the canonical timeline, exact submission
+   requirements, trading rules, client facts, judging, and authorship policy
+4. `configs/wharton_strategy.json`: draft strategies and modeling assumptions
+5. `ledger/README.md`, `README.md`, and the Wharton section of
+   `docs/OPEN-TASKS.md`
+
 ## Scope
 
-DECA SMG only: Sept 8 to Dec 4 2026, $100,000 start, $5 per trade, every order
-filled at the 4:00 p.m. ET close. Wharton code exists in the repo but is out of
-scope; do not produce Wharton sheets.
+This repository supports two separate competition profiles:
 
-Armaan, a high school student, runs the team. SMG has no API: every order is
-typed in by hand. The agent's job is a well-researched order sheet each morning
-and an honest ledger, never to trade.
+- **DECA SMG:** Sept 8 to Dec 4, 2026; $100,000 start; $5 per trade; every order
+  fills at the 4:00 p.m. ET close. The weekday morning routine below is DECA
+  only.
+- **Wharton WInS:** official trading Sept 28 to Nov 6, 2026; $300,000 start;
+  client strategy and deliverables continue through Dec 4. Use
+  `docs/rules/wharton-verified.md` as the deadline and submission authority.
+
+Armaan, a high school student, runs both teams. The agent provides research,
+calculations, rule checks, and portfolio records. Students place every trade
+and own the reasoning and submitted writing. Never place an order or log into a
+competition platform.
+
+## Wharton workflow
+
+- Use `uv run investlab wharton cashflows`, `uv run investlab wharton project`,
+  `uv run investlab wharton plan`, and `uv run investlab rules --profile
+  wharton`.
+- The WInS portfolio is evidence of the strategy, not the competition score.
+  Returns, rank, and trade count are not judging criteria.
+- Record only trades that actually executed in WInS. The three notes selected
+  for the October 23 Trading Notes Analysis are verified against WInS.
+- Before preparing any deliverable, read its full section in
+  `docs/rules/wharton-verified.md`. Do not invent requirements that Wharton has
+  not released, especially the Final Report format before November 9.
+- Generative AI may help with brainstorming, research, calculations, and
+  critique. AI-generated work may not be submitted as the team's own; any AI
+  material included in a submission must be cited. Students write the final
+  prose in their own authentic voice.
 
 ## Environment
 

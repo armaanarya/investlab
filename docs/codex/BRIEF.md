@@ -5,7 +5,7 @@ morning task's prompt is in `docs/codex/MORNING_TASK.md`.
 
 ---
 
-You're taking over the daily operation of investlab, the Python CLI I (Armaan) use for the DECA Stock Market Game this fall. Until now Claude Code ran it on my Mac. Run the exact same process in Codex. This handoff is DECA only; ignore Wharton.
+You're taking over the DECA morning operation of investlab, the Python CLI I (Armaan) use for both DECA and Wharton. Until now Claude Code ran the DECA process on my Mac. Run the exact same DECA process in Codex. This particular handoff is DECA-only; Wharton remains an active, separate profile in the repository.
 
 Repo: https://github.com/armaanarya/investlab (private). You have GitHub access.
 

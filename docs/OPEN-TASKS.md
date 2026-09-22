@@ -112,7 +112,8 @@ Last updated 2026-09-18. DECA first; Wharton (rules published 2026-09-15) at the
 
 ## Wharton WInS
 
-Rules and client: `docs/rules/wharton-verified.md` (2026-27, read 2026-09-18).
+Rules, exact deadlines, and submission requirements:
+`docs/rules/wharton-verified.md` (2026-27, checked 2026-09-21).
 Commands: `investlab wharton cashflows | project | plan`, `rules --profile
 wharton`. Strategy inputs: `configs/wharton_strategy.json`.
 
@@ -131,8 +132,9 @@ wharton`. Strategy inputs: `configs/wharton_strategy.json`.
       yours: change weights, the reserve rule, the flexibility buffer.
 - [ ] **Replace every placeholder return and volatility** with a cited source
       (the plan and projections print a banner until you do).
-- [ ] **Re-read the 2026-27 General Rules page** (AI policy, citation format);
-      it returned 403 to the tool.
+- [x] **Verify the 2026-27 AI policy.** It permits brainstorming and idea
+      generation, prohibits submitting AI-generated work as the team's own,
+      and requires citations for any AI-generated material that is included.
 - [ ] Write every Trading Note in WInS at the time of the trade, in your own
       words. Record each fill with `investlab fill --profile wharton`.
 - [ ] Check which U.S. Treasuries WInS lists for 2036-2042 maturities (the

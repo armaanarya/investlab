@@ -1,6 +1,7 @@
 # investlab
 
-Decision support for the **DECA Stock Market Game**, Sept 8 to Dec 4, 2026.
+Decision support for the **DECA Stock Market Game** and the **2026-27 Wharton
+Global High School Investment Competition**.
 
 Each trading morning it prints an order sheet: what to sell, the compliance buys
 DECA requires, what to buy, and where every held position stands against its
@@ -16,7 +17,9 @@ is **[docs/STRATEGY.md](docs/STRATEGY.md)**.
 `investlab wharton project` simulates Laura Gao's portfolio to 2033 (operating
 reserve, chance all ten payments are funded, facility-contribution range), and
 `investlab wharton cashflows` prints the case study's numbers. Rules:
-`docs/rules/wharton-verified.md`. Strategy inputs: `configs/wharton_strategy.json`.
+`docs/rules/wharton-verified.md`. That file is also the canonical Wharton
+timeline and explains exactly what is due at each deadline. Strategy inputs:
+`configs/wharton_strategy.json`.
 
 ## What this is not
 
@@ -166,9 +169,12 @@ configs/             team rulings (deca_rulings.json), Wharton strategy inputs
 docs/
   STRATEGY.md        how the sheet decides, and the backtest evidence
   OPEN-TASKS.md      what is left, what is human-only, what is deferred
+  rules/wharton-verified.md
+                      Wharton timeline and exact submission requirements
   rules/             verified competition rules, with sources
   codex/             prompts for handing the process to Codex
 ledger/deca/         the book: portfolio, trades, cash events, curve, LEDGER.md
+ledger/wharton/      the separate Wharton WInS book
 research/deca/       earnings calendar and saved order sheets
 src/investlab/
   cli.py             every command
